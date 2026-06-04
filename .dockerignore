@@ -1,0 +1,7 @@
+.env
+.manus-logs
+.webdev
+dist
+node_modules
+*.log
+*.pdf

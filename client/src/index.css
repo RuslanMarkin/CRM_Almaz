@@ -1,0 +1,111 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius: 0.5rem;
+
+  /* ── Light theme palette ── */
+  --color-background: oklch(0.98 0.003 240);
+  --color-foreground: oklch(0.15 0.01 240);
+
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.15 0.01 240);
+
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.15 0.01 240);
+
+  --color-primary: oklch(0.47 0.18 264);
+  --color-primary-foreground: oklch(1 0 0);
+
+  --color-secondary: oklch(0.96 0.005 240);
+  --color-secondary-foreground: oklch(0.25 0.01 240);
+
+  --color-muted: oklch(0.96 0.005 240);
+  --color-muted-foreground: oklch(0.52 0.01 240);
+
+  --color-accent: oklch(0.55 0.2 264);
+  --color-accent-foreground: oklch(1 0 0);
+
+  --color-destructive: oklch(0.55 0.22 25);
+  --color-destructive-foreground: oklch(1 0 0);
+
+  --color-border: oklch(0.91 0.005 240);
+  --color-input: oklch(0.91 0.005 240);
+  --color-ring: oklch(0.47 0.18 264);
+
+  /* ── Sidebar ── */
+  --color-sidebar: oklch(0.13 0.02 264);
+  --color-sidebar-foreground: oklch(0.96 0.005 240);
+  --color-sidebar-muted: oklch(0.62 0.01 240);
+  --color-sidebar-border: oklch(0.22 0.02 264);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3 {
+    @apply tracking-tight;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+
+  /* Sidebar custom properties */
+  .bg-sidebar {
+    background-color: var(--color-sidebar);
+  }
+  .text-sidebar-foreground {
+    color: var(--color-sidebar-foreground);
+  }
+  .text-sidebar-muted {
+    color: var(--color-sidebar-muted);
+  }
+  .border-sidebar-border {
+    border-color: var(--color-sidebar-border);
+  }
+  .text-accent {
+    color: oklch(0.72 0.18 264);
+  }
+}
+
+@layer utilities {
+  .container {
+    @apply mx-auto px-4 sm:px-6 lg:px-8;
+    max-width: 1280px;
+  }
+
+  .flex {
+    min-width: 0;
+    min-height: 0;
+  }
+}
