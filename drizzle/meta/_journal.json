@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1776762475504,
+      "tag": "0000_neat_edwin_jarvis",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1776762709007,
+      "tag": "0001_striped_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1780560106128,
+      "tag": "0002_sp31_waybill_fields",
+      "breakpoints": true
+    }
+  ]
+}
