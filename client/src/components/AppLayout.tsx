@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/version";
 import {
   BookOpen,
   Building2,
@@ -99,6 +100,13 @@ export function AppLayout({ children }: AppLayoutProps) {
             })}
           </div>
         </nav>
+
+        <div className="px-6 py-4 border-t border-sidebar-border">
+          <div className="flex items-center justify-between gap-3 text-[11px] text-sidebar-muted">
+            <span>Версия</span>
+            <span className="font-mono text-sidebar-foreground/80">v{APP_VERSION}</span>
+          </div>
+        </div>
       </aside>
 
       {/* Main content */}
