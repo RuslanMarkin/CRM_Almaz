@@ -28,7 +28,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   Building2,
+  Download,
   Eye,
+  FileSpreadsheet,
   Link2,
   MoreHorizontal,
   Package,
@@ -727,6 +729,8 @@ export default function Waybills() {
                           <DropdownMenuItem onClick={() => setDetailsId(waybill.id)}><Eye className="mr-2" /> Связи и участники</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => openEdit(waybill)}><Pencil className="mr-2" /> Редактировать</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => window.open(`/api/waybills/${waybill.id}/print`, "_blank")}><Printer className="mr-2" /> Итоговая ТТН по образцу</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { window.location.href = `/api/waybills/${waybill.id}/print?download=1`; }}><Download className="mr-2" /> Скачать печатную форму</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { window.location.href = `/api/waybills/${waybill.id}/xlsx`; }}><FileSpreadsheet className="mr-2" /> Скачать XLSX</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive" onClick={() => {
                             if (confirm("Удалить накладную?")) deleteMutation.mutate({ id: waybill.id });
                           }}>

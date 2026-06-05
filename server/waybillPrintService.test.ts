@@ -127,8 +127,9 @@ describe("generateWaybillPrintHtml", () => {
     });
 
     expect(html).toContain("Типовая межотраслевая форма № СП-31");
-    expect(html).toContain("Договор № ДГ-42");
-    expect(html).toContain("Спец. № СП-7");
+    expect(html).toContain("Утверждена постановлением Госкомстата России");
+    expect(html).toContain("от 29.09.97 № 68");
+    expect(html).toContain("Организация - перевозчик");
     expect(html).toContain("Погрузочно-разгрузочные операции");
     expect(html).toContain("Прочие сведения (заполняется организацией-владельцем автотранспорта)");
     expect(html).toContain("Поставщик, ИНН 7700000001");
@@ -137,7 +138,7 @@ describe("generateWaybillPrintHtml", () => {
     expect(html).toContain("Пшеница &lt;урожай &amp; 2026&gt;");
     expect(html).not.toContain("Пшеница <урожай & 2026>");
     expect(html.match(/<main class="page">/g)).toHaveLength(2);
-    expect(html).toContain("@page { size: A4 portrait; margin: 0; }");
+    expect(html).toContain("@page { size: A4 portrait; margin: 5mm 4mm; }");
     expect(html).not.toContain("A4 landscape");
   });
 });

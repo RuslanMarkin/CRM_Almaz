@@ -43,6 +43,38 @@ function formatYear(value: Date | string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "" : String(date.getFullYear());
 }
 
+function getValidDate(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDay(value: Date | string | null | undefined): string {
+  const date = getValidDate(value);
+  return date ? String(date.getDate()).padStart(2, "0") : "";
+}
+
+function formatMonthNumber(value: Date | string | null | undefined): string {
+  const date = getValidDate(value);
+  return date ? String(date.getMonth() + 1).padStart(2, "0") : "";
+}
+
+function formatMonthName(value: Date | string | null | undefined): string {
+  const date = getValidDate(value);
+  if (!date) return "";
+  return new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(date);
+}
+
+function formatCentury(value: Date | string | null | undefined): string {
+  const year = formatYear(value);
+  return year ? year.slice(0, 2) : "";
+}
+
+function formatYearSuffix(value: Date | string | null | undefined): string {
+  const year = formatYear(value);
+  return year ? year.slice(2) : "";
+}
+
 function formatNumber(value: string | number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || value === "") return "";
   const number = Number(value);
@@ -82,8 +114,7 @@ function calculateAmount(waybill: Waybill): string {
 }
 
 export function generateWaybillPrintHtml(data: WaybillPrintData): string {
-  const { waybill, contract, specification, supplier, buyer, carrier, vehicleOwner, payer } = data;
-  const contractDate = contract?.startDate ?? contract?.createdAt;
+  const { waybill, supplier, buyer, carrier, vehicleOwner, payer } = data;
   const shipperLine = partyLine(supplier, waybill.supplierName);
   const buyerLine = partyLine(buyer, waybill.buyerName);
   const carrierLine = partyLine(carrier, waybill.carrierName);
@@ -102,49 +133,56 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
       .tools { position: sticky; top: 0; z-index: 10; display: flex; gap: 8px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #aaa; }
       .tools button { padding: 7px 14px; border: 1px solid #222; background: #fff; cursor: pointer; font: 14px Arial, sans-serif; }
       .page {
-        width: 210mm; min-height: 297mm; margin: 10px auto; padding: 11mm 7mm 8mm;
-        background: #fff; box-shadow: 0 2px 12px #0002; page-break-after: always;
-        font-size: 6.7pt; line-height: 1.08;
+        width: 210mm; min-height: 297mm; margin: 10px auto; padding: 5mm 4mm 5mm;
+        background: #fff;
+        box-shadow: 0 2px 12px #0002; page-break-after: always;
+        font-size: 7.1pt; line-height: 1.04;
       }
       .page:last-child { page-break-after: auto; }
       table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      td, th { padding: .55mm .7mm; vertical-align: middle; font-weight: 400; }
-      .boxed td, .boxed th { border: .25mm solid #000; }
+      td, th { padding: .5mm .7mm; vertical-align: middle; font-weight: 400; }
+      .boxed td, .boxed th { border: .32mm solid #000; background: #fff; }
       .boxed th { text-align: center; }
-      .gray { background: #ddd; }
-      .red { color: #e00000; }
+      .gray { background: #fff; }
+      .red { color: #000; }
       .center { text-align: center; }
       .right { text-align: right; }
       .bold { font-weight: 700; }
       .tiny { font-size: 5.6pt; }
       .micro { font-size: 4.7pt; line-height: 1; }
-      .fill { min-height: 4.3mm; background: #ddd; padding: .8mm 1.2mm; text-align: center; }
-      .underline { border-bottom: .25mm solid #000; min-height: 3.2mm; padding: .3mm 1mm; text-align: center; }
+      .fill {
+        min-height: 5.1mm; background: #fff; border: .32mm solid #000;
+        padding: .55mm 1mm; text-align: center; font-weight: 700;
+      }
+      .underline { border-bottom: .32mm solid #000; min-height: 3.2mm; padding: .3mm 1mm; text-align: center; background: #fff; }
       .caption { margin-top: .3mm; text-align: center; font-size: 4.6pt; }
       .spacer { height: 1.2mm; }
-      .section-title { margin: 1.3mm 0 .7mm; font-size: 7.2pt; font-weight: 700; text-align: center; }
-      .top { display: grid; grid-template-columns: 1fr 54mm; align-items: end; column-gap: 4mm; }
-      .contract-note { width: 58mm; min-height: 11mm; padding: 2mm; background: #ddd; color: #d00000; font-weight: 700; }
-      .form-name { text-align: right; font-size: 5.7pt; }
-      h1 { margin: 2.5mm 0 1mm; text-align: center; font-size: 9.5pt; line-height: 1; }
-      .title-line { display: grid; grid-template-columns: 1fr 30mm; align-items: end; gap: 1.5mm; }
-      .title-number { min-height: 5mm; padding: 1mm; background: #ddd; text-align: center; }
+      .section-title { margin: 2mm 0 .9mm; font-size: 7.4pt; font-weight: 700; text-align: center; }
+      .top { display: grid; grid-template-columns: 1fr 96mm; align-items: start; column-gap: 3mm; min-height: 16mm; }
+      .form-name { font-size: 7.2pt; font-weight: 700; line-height: 1.18; background: #fff; padding-left: 1mm; }
+      h1 { margin: 2mm 0 .4mm; text-align: center; font-size: 12pt; line-height: 1; }
+      .title-line { display: grid; grid-template-columns: 1fr 38mm 24mm; align-items: end; gap: 0; }
+      .title-number {
+        min-height: 5.8mm; padding: .7mm; background: #fff; border-bottom: .6mm solid #000;
+        text-align: center; font-size: 9.2pt; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
       .codes { width: 27mm; margin-left: auto; }
-      .codes td { border: .25mm solid #000; padding: .7mm; text-align: center; }
+      .codes td { border: .45mm solid #000; padding: .8mm; text-align: center; background: #fff; }
       .codes .label { border: 0; }
-      .field-row { display: grid; grid-template-columns: 31mm 1fr 18mm; align-items: center; gap: 1mm; margin-top: .6mm; }
-      .field-row.no-code { grid-template-columns: 31mm 1fr; }
-      .field-row.vehicle { grid-template-columns: 31mm 23mm 32mm 1fr 26mm; }
-      .field-row.loading { grid-template-columns: 31mm 1fr 31mm 25mm; }
-      .field-row.trailer { grid-template-columns: 31mm 1fr 20mm 13mm; }
+      .field-row { display: grid; grid-template-columns: 22mm 1fr 18mm 32mm; align-items: stretch; gap: 0; margin-top: .8mm; }
+      .field-row.no-code { grid-template-columns: 22mm 1fr; }
+      .field-row.vehicle { grid-template-columns: 30mm 20mm 34mm 30mm 1fr; align-items: center; }
+      .field-row.loading { grid-template-columns: 22mm 1fr 35mm 36mm; }
+      .field-row.trailer { grid-template-columns: 42mm 1fr 28mm 24mm; align-items: center; }
       .field-label { line-height: 1; }
-      .code-box { min-height: 5mm; border: .25mm solid #000; padding: 1mm; text-align: center; }
-      .cargo-accounts { display: grid; grid-template-columns: 34mm 1fr 18mm 31mm 18mm; align-items: center; gap: 1mm; margin-top: 1.5mm; }
-      .account { height: 9mm; border: .25mm solid #000; }
-      .product-line { display: grid; grid-template-columns: 24mm 1fr; align-items: center; gap: 2mm; margin-top: 1.1mm; }
-      .quality { display: grid; grid-template-columns: 22mm 25mm 27mm 1fr 20mm 1fr 5mm; align-items: end; gap: 1mm; margin: 2mm 0 1mm; }
-      .cargo th { height: 7mm; font-size: 5.3pt; line-height: .98; }
-      .cargo td { height: 4.8mm; text-align: center; }
+      .field-label, .field-row > div:first-child { display: flex; align-items: center; padding: .6mm .8mm; background: #fff; }
+      .code-box { min-height: 5.2mm; border: .45mm solid #000; padding: 1mm; text-align: center; background: #fff; }
+      .cargo-accounts { display: grid; grid-template-columns: 34mm 9mm 13mm 46mm 1fr 13mm 31mm; align-items: center; gap: 0; margin-top: 1.5mm; }
+      .account { height: 12mm; border: .45mm solid #000; background: #fff; }
+      .product-line { display: grid; grid-template-columns: 22mm 1fr; align-items: center; gap: 0; margin-top: 1.1mm; }
+      .quality { display: grid; grid-template-columns: 22mm 26mm 27mm 39mm 5mm 25mm 1fr 5mm; align-items: end; gap: 0; margin: 1.8mm 0 1mm; }
+      .cargo th { height: 9mm; font-size: 6pt; line-height: .98; }
+      .cargo td { height: 5.6mm; text-align: center; }
       .cargo .numbers td, .fees .numbers td, .operations .numbers td, .transport .numbers td, .calc .numbers td { height: 3.5mm; font-size: 5pt; }
       .fees { width: 82%; margin: 1.5mm 0 1.5mm auto; }
       .fees th { height: 7mm; font-size: 5.3pt; line-height: .98; }
@@ -172,10 +210,14 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
       .tax-lines { padding-left: 2mm; }
       .tax-lines div { min-height: 9mm; border-bottom: .25mm solid #000; padding-top: 4mm; }
       @media print {
-        body { background: #fff; }
+        html, body { width: 210mm; margin: 0; color: #000 !important; background: #fff !important; }
+        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .tools { display: none; }
-        .page { margin: 0; box-shadow: none; }
-        @page { size: A4 portrait; margin: 0; }
+        .page {
+          width: 100%; min-height: auto; margin: 0; padding: 0;
+          color: #000 !important; background: #fff !important; box-shadow: none; overflow: visible;
+        }
+        @page { size: A4 portrait; margin: 5mm 4mm; }
       }
     </style>
   </head>
@@ -187,51 +229,40 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
 
     <main class="page">
       <div class="top">
-        <div class="contract-note">
-          Договор № ${text(contract?.number)} от ${text(formatDate(contractDate))}.
-          Спец. № ${text(specification?.number)} от ${text(formatDate(specification?.startDate))}
+        <div></div>
+        <div class="form-name">
+          Типовая межотраслевая форма № СП-31<br />
+          Утверждена постановлением Госкомстата России<br />
+          от 29.09.97 № 68
         </div>
-        <div class="form-name">Типовая межотраслевая форма № СП-31</div>
       </div>
 
       <div class="title-line">
         <h1>ТОВАРНО-ТРАНСПОРТНАЯ НАКЛАДНАЯ (зерно) №</h1>
         <div class="title-number">${text(waybill.number)}</div>
+        <div class="right">Коды</div>
       </div>
 
       <table>
         <tr>
-          <td style="width: 70%"></td>
-          <td class="right">Коды</td>
-          <td style="width: 18mm"></td>
-        </tr>
-        <tr>
-          <td class="center">«&nbsp;&nbsp;&nbsp;&nbsp;»&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${text(formatYear(waybill.waybillDate))} г.</td>
+          <td class="center" style="width: 62%">"&nbsp;&nbsp;${text(formatDay(waybill.waybillDate))}&nbsp;&nbsp;"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${text(formatMonthName(waybill.waybillDate))}&nbsp;&nbsp;&nbsp;&nbsp;${text(formatCentury(waybill.waybillDate))}&nbsp;&nbsp;${text(formatYearSuffix(waybill.waybillDate))}&nbsp;&nbsp;г.</td>
           <td class="right">Форма по ОКУД</td>
-          <td class="code-box">0325031</td>
+          <td class="code-box" style="width: 32mm">0325031</td>
         </tr>
         <tr>
-          <td></td>
           <td class="right">Дата составления</td>
-          <td class="code-box gray">${text(formatDate(waybill.waybillDate))}</td>
+          <td class="right"></td>
+          <td class="code-box gray">${text(formatDay(waybill.waybillDate))}&nbsp;&nbsp;&nbsp;${text(formatMonthNumber(waybill.waybillDate))}&nbsp;&nbsp;&nbsp;${text(formatYear(waybill.waybillDate))}</td>
         </tr>
       </table>
 
       <div class="field-row">
-        <div class="field-label">Поставщик</div>
-        <div>
-          <div class="fill">${text(shipperLine)}</div>
-          <div class="caption">(поставщик по договору поставки, ИНН, юридический адрес)</div>
-        </div>
-        <div class="code-box gray">${text(partyOkpo(supplier))}</div>
-      </div>
-      <div class="field-row">
         <div class="field-label">Организация</div>
         <div>
-          <div class="fill">${text(carrierLine)}</div>
-          <div class="caption">Лицо-составитель ТТН (поставщик, грузоотправитель или транспортная компания)</div>
+          <div class="fill">${text(shipperLine)}</div>
         </div>
-        <div class="code-box gray">${text(partyOkpo(carrier))}</div>
+        <div class="right" style="padding:1.5mm 1mm">по ОКПО</div>
+        <div class="code-box gray">${text(partyOkpo(supplier))}</div>
       </div>
       <div class="field-row vehicle">
         <div>Марка автомобиля</div>
@@ -239,6 +270,12 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
         <div>Государственный номерной знак</div>
         <div class="fill">${text(waybill.tractorNumber)}</div>
         <div>к путевому листу № ${text(waybill.tripSheetNumber)}</div>
+      </div>
+      <div class="field-row no-code">
+        <div class="field-label">Организация - перевозчик</div>
+        <div>
+          <div class="fill">${text(carrierLine)}</div>
+        </div>
       </div>
       <div class="field-row no-code">
         <div>Организация-владелец автотранспорта</div>
@@ -250,7 +287,7 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
       <div class="field-row no-code">
         <div>Водитель</div>
         <div>
-          <div class="fill">${text(waybill.driverName)} <span style="float:right">автоперевозка</span></div>
+          <div class="fill">${text(waybill.driverName)} <span style="float:right">Автотранспорт</span></div>
           <div class="caption">(фамилия, имя, отчество) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (вид перевозки)</div>
         </div>
       </div>
@@ -305,7 +342,9 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
         <div></div>
         <div>Счет<br />(дебет)</div>
         <div class="account"></div>
+        <div></div>
         <div>Счет<br />(кредит)</div>
+        <div class="account"></div>
       </div>
       <div class="product-line">
         <div>Продукция</div>
@@ -316,7 +355,7 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
       </div>
       <div class="quality">
         <div>Сорт, класс</div><div class="underline">${text(waybill.cargoGrade)}</div>
-        <div>Засоренность</div><div class="underline">${text(formatNumber(waybill.impurityPercent))}</div><div>%&nbsp;&nbsp; Влажность</div>
+        <div>Засоренность</div><div class="underline">${text(formatNumber(waybill.impurityPercent))}</div><div>%</div><div>Влажность</div>
         <div class="underline">${text(formatNumber(waybill.moisturePercent))}</div><div>%</div>
       </div>
 
@@ -371,12 +410,6 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
         <div><div class="underline red">${text(waybill.declarationInfo)}</div><div class="caption">(свидетельство, паспорт, сертификаты и т.д.)</div></div>
         <div>на</div>
         <div><span class="underline" style="display:inline-block;width:12mm">&nbsp;</span> листах</div>
-      </div>
-      <div class="notes">
-        <div>Примечание:</div>
-        <div>* ПЕЧАТЬ на ТТН проставляет ГРУЗООТПРАВИТЕЛЬ</div>
-        <div>** Строки, обозначенные «V», подлежат обязательному заполнению</div>
-        <div>*** ТТН оформляется в 4-х экземплярах</div>
       </div>
     </main>
 

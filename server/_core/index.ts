@@ -4,12 +4,21 @@ import { createServer } from "http";
 import { getContractById, getWaybillDetails, migrateDatabase } from "../db";
 import { generateContractPrintHtml } from "../contractPrintService";
 import { generateWaybillPrintHtml } from "../waybillPrintService";
+import { generateWaybillXlsx } from "../waybillXlsxService";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic } from "./static";
+
+function safeDownloadName(value: string): string {
+  const cleaned = value
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "waybill";
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -69,10 +78,39 @@ async function startServer() {
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
+      if (req.query.download === "1") {
+        const filename = `TTN-${safeDownloadName(details.waybill.number)}.html`;
+        res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+      }
       res.send(generateWaybillPrintHtml(details));
     } catch (err) {
       console.error("Waybill print generation error:", err);
       res.status(500).json({ error: "Failed to generate waybill print form" });
+    }
+  });
+
+  app.get("/api/waybills/:id/xlsx", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid ID" });
+        return;
+      }
+      const details = await getWaybillDetails(id);
+      if (!details) {
+        res.status(404).json({ error: "Waybill not found" });
+        return;
+      }
+
+      const filename = `TTN-${safeDownloadName(details.waybill.number)}.xlsx`;
+      const xlsx = generateWaybillXlsx(details);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(xlsx);
+    } catch (err) {
+      console.error("Waybill XLSX generation error:", err);
+      res.status(500).json({ error: "Failed to generate waybill XLSX" });
     }
   });
 
