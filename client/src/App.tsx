@@ -5,29 +5,63 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppLayout } from "./components/AppLayout";
-import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Counterparties from "./pages/Counterparties";
 import CounterpartyDetail from "./pages/CounterpartyDetail";
 import Contracts from "./pages/Contracts";
 import Specifications from "./pages/Specifications";
 import Waybills from "./pages/Waybills";
+import AgroTradePrototype from "./pages/AgroTradePrototype";
 
 function Router() {
   return (
-    <AppLayout>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/counterparties" component={Counterparties} />
-        <Route path="/counterparties/:id" component={CounterpartyDetail} />
-        <Route path="/contracts" component={Contracts} />
-        <Route path="/specifications" component={Specifications} />
-        <Route path="/waybills" component={Waybills} />
-        <Route path="/404" component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
-    </AppLayout>
+    <Switch>
+      <Route path="/">
+        <AgroTradePrototype initialView="dashboard" />
+      </Route>
+      <Route path="/dashboard">
+        <AgroTradePrototype initialView="dashboard" />
+      </Route>
+      <Route path="/ttn">
+        <AgroTradePrototype initialView="ttn" />
+      </Route>
+      <Route path="/waybills">
+        <AgroTradePrototype initialView="ttn" />
+      </Route>
+
+      <Route path="/counterparties">
+        <AppLayout>
+          <Counterparties />
+        </AppLayout>
+      </Route>
+      <Route path="/counterparties/:id">
+        <AppLayout>
+          <CounterpartyDetail />
+        </AppLayout>
+      </Route>
+      <Route path="/contracts">
+        <AppLayout>
+          <Contracts />
+        </AppLayout>
+      </Route>
+      <Route path="/specifications">
+        <AppLayout>
+          <Specifications />
+        </AppLayout>
+      </Route>
+      <Route path="/legacy-dashboard">
+        <AppLayout>
+          <Dashboard />
+        </AppLayout>
+      </Route>
+      <Route path="/legacy-waybills">
+        <AppLayout>
+          <Waybills />
+        </AppLayout>
+      </Route>
+      <Route path="/404" component={NotFound} />
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 

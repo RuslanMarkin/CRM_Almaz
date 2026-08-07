@@ -1,5 +1,6 @@
 import {
   int,
+  longtext,
   mysqlEnum,
   mysqlTable,
   text,
@@ -31,12 +32,19 @@ export const counterparties = mysqlTable("counterparties", {
   name: varchar("name", { length: 512 }).notNull(),
   shortName: varchar("shortName", { length: 256 }),
   type: mysqlEnum("type", ["legal", "individual", "sole_trader"]).default("legal").notNull(),
+  businessRole: mysqlEnum("businessRole", ["seller", "buyer", "carrier"]),
+  region: varchar("region", { length: 256 }),
+  profile: text("profile"),
   inn: varchar("inn", { length: 12 }),
   ogrn: varchar("ogrn", { length: 15 }),
   kpp: varchar("kpp", { length: 9 }),
   okpo: varchar("okpo", { length: 10 }),
   legalAddress: text("legalAddress"),
+  postalAddress: text("postalAddress"),
   actualAddress: text("actualAddress"),
+  representativeName: varchar("representativeName", { length: 256 }),
+  representativePosition: varchar("representativePosition", { length: 128 }),
+  authorityBasis: varchar("authorityBasis", { length: 512 }),
   bankName: varchar("bankName", { length: 512 }),
   bankBik: varchar("bankBik", { length: 9 }),
   bankAccount: varchar("bankAccount", { length: 20 }),
@@ -57,6 +65,7 @@ export const contracts = mysqlTable("contracts", {
   id: int("id").autoincrement().primaryKey(),
   number: varchar("number", { length: 128 }).notNull(),
   counterpartyId: int("counterpartyId").notNull(),
+  contractKind: mysqlEnum("contractKind", ["purchase", "sale", "carriage"]),
   type: mysqlEnum("type", ["framework", "one_time", "service"]).default("framework").notNull(),
   subject: text("subject"),
   startDate: timestamp("startDate"),
@@ -74,11 +83,39 @@ export const contracts = mysqlTable("contracts", {
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;
 
+// ─── Deals (Сделки) ─────────────────────────────────────────────────────────
+
+export const deals = mysqlTable("deals", {
+  id: int("id").autoincrement().primaryKey(),
+  number: varchar("number", { length: 128 }).notNull().unique(),
+  sellerId: int("sellerId").notNull(),
+  buyerId: int("buyerId").notNull(),
+  carrierId: int("carrierId"),
+  cargoName: varchar("cargoName", { length: 512 }).notNull(),
+  cargoGrade: varchar("cargoGrade", { length: 128 }),
+  plannedVolume: decimal("plannedVolume", { precision: 10, scale: 3 }),
+  purchasePrice: decimal("purchasePrice", { precision: 15, scale: 2 }),
+  salePrice: decimal("salePrice", { precision: 15, scale: 2 }),
+  currency: varchar("currency", { length: 3 }).default("RUB"),
+  startDate: timestamp("startDate"),
+  endDate: timestamp("endDate"),
+  status: mysqlEnum("status", ["planning", "active", "closing", "completed", "cancelled"])
+    .default("planning")
+    .notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Deal = typeof deals.$inferSelect;
+export type InsertDeal = typeof deals.$inferInsert;
+
 // ─── Specifications (Спецификации) ───────────────────────────────────────────
 
 export const specifications = mysqlTable("specifications", {
   id: int("id").autoincrement().primaryKey(),
   number: varchar("number", { length: 128 }).notNull(),
+  dealId: int("dealId"),
   contractId: int("contractId").notNull(),
   counterpartyId: int("counterpartyId").notNull(),
   loadingAddress: text("loadingAddress"),
@@ -101,6 +138,56 @@ export const specifications = mysqlTable("specifications", {
 
 export type Specification = typeof specifications.$inferSelect;
 export type InsertSpecification = typeof specifications.$inferInsert;
+
+// ─── Document scan attachments ──────────────────────────────────────────────
+
+export const documentAttachments = mysqlTable("document_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: mysqlEnum("entityType", ["contract", "specification", "counterparty", "organization"]).notNull(),
+  entityId: int("entityId").notNull(),
+  documentKind: mysqlEnum("documentKind", ["contract_scan", "specification_scan", "statutory_document", "other"])
+    .default("other")
+    .notNull(),
+  specificationId: int("specificationId"),
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  contentType: varchar("contentType", { length: 128 }).notNull(),
+  size: int("size").notNull(),
+  // Legacy files remain in MySQL; new S3-backed files only keep their object key here.
+  dataUrl: longtext("dataUrl"),
+  storageKey: varchar("storageKey", { length: 1024 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DocumentAttachment = typeof documentAttachments.$inferSelect;
+export type InsertDocumentAttachment = typeof documentAttachments.$inferInsert;
+
+// ─── Own organization (Наша организация) ───────────────────────────────────
+
+export const organizationProfiles = mysqlTable("organization_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 512 }).notNull(),
+  shortName: varchar("shortName", { length: 256 }),
+  inn: varchar("inn", { length: 12 }),
+  ogrn: varchar("ogrn", { length: 15 }),
+  kpp: varchar("kpp", { length: 9 }),
+  legalAddress: text("legalAddress"),
+  postalAddress: text("postalAddress"),
+  representativeName: varchar("representativeName", { length: 256 }),
+  representativePosition: varchar("representativePosition", { length: 128 }),
+  authorityBasis: varchar("authorityBasis", { length: 512 }),
+  bankName: varchar("bankName", { length: 512 }),
+  bankBik: varchar("bankBik", { length: 9 }),
+  bankAccount: varchar("bankAccount", { length: 20 }),
+  corrAccount: varchar("corrAccount", { length: 20 }),
+  phone: varchar("phone", { length: 32 }),
+  email: varchar("email", { length: 320 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrganizationProfile = typeof organizationProfiles.$inferSelect;
+export type InsertOrganizationProfile = typeof organizationProfiles.$inferInsert;
 
 // ─── Waybills (Накладные) ────────────────────────────────────────────────────
 
@@ -139,6 +226,12 @@ export const waybills = mysqlTable("waybills", {
   grossWeight: decimal("grossWeight", { precision: 10, scale: 3 }),
   tareWeight: decimal("tareWeight", { precision: 10, scale: 3 }),
   netWeight: decimal("netWeight", { precision: 10, scale: 3 }),
+
+  // Delivery close-out (Факт по итогу доставки)
+  dispatchedWeight: decimal("dispatchedWeight", { precision: 10, scale: 3 }),
+  receivedWeight: decimal("receivedWeight", { precision: 10, scale: 3 }),
+  closedAt: timestamp("closedAt"),
+  closureNotes: text("closureNotes"),
 
   // Cargo
   cargoName: varchar("cargoName", { length: 512 }),

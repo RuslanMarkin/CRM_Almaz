@@ -25,11 +25,13 @@ import { toast } from "sonner";
 import { Link, useSearch } from "wouter";
 
 type CPType = "legal" | "individual" | "sole_trader";
+type CounterpartyRole = "seller" | "buyer" | "carrier";
 
 interface FormState {
   name: string;
   shortName: string;
   type: CPType;
+  businessRole: CounterpartyRole;
   inn: string;
   ogrn: string;
   kpp: string;
@@ -49,6 +51,7 @@ const emptyForm: FormState = {
   name: "",
   shortName: "",
   type: "legal",
+  businessRole: "seller",
   inn: "",
   ogrn: "",
   kpp: "",
@@ -124,6 +127,7 @@ export default function Counterparties() {
       name: (cp as any).name ?? "",
       shortName: (cp as any).shortName ?? "",
       type: ((cp as any).type ?? "legal") as CPType,
+      businessRole: ((cp as any).businessRole ?? "seller") as CounterpartyRole,
       inn: (cp as any).inn ?? "",
       ogrn: (cp as any).ogrn ?? "",
       kpp: (cp as any).kpp ?? "",
@@ -309,6 +313,17 @@ export default function Counterparties() {
                     <SelectItem value="legal">ООО / АО / ПАО</SelectItem>
                     <SelectItem value="individual">Физическое лицо</SelectItem>
                     <SelectItem value="sole_trader">ИП</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Роль в договоре</Label>
+                <Select value={form.businessRole} onValueChange={(v) => setForm((p) => ({ ...p, businessRole: v as CounterpartyRole }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="seller">Продавец</SelectItem>
+                    <SelectItem value="buyer">Покупатель</SelectItem>
+                    <SelectItem value="carrier">Перевозчик</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
