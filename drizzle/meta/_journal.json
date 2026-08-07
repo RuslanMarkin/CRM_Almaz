@@ -22,6 +22,62 @@
       "when": 1780560106128,
       "tag": "0002_sp31_waybill_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1783419450000,
+      "tag": "0003_document_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1785744000000,
+      "tag": "0004_waybill_delivery_closure",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1785830400000,
+      "tag": "0005_waybill_dispatch_and_receipt_weights",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1785916800000,
+      "tag": "0006_counterparty_cards_and_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1786003200000,
+      "tag": "0007_contract_workflow_and_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1786089600000,
+      "tag": "0008_statutory_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1786093200000,
+      "tag": "0009_deals",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1786100400000,
+      "tag": "0010_attachment_object_storage",
+      "breakpoints": true
     }
   ]
 }

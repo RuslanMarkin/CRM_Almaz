@@ -1,6 +1,7 @@
 export interface ContractPrintData {
   contract: {
     number?: string | null;
+    contractKind?: string | null;
     type?: string | null;
     subject?: string | null;
     startDate?: Date | string | null;
@@ -28,12 +29,36 @@ export interface ContractPrintData {
     phone?: string | null;
     email?: string | null;
   } | null;
+  organization?: {
+    name?: string | null;
+    shortName?: string | null;
+    inn?: string | null;
+    ogrn?: string | null;
+    kpp?: string | null;
+    legalAddress?: string | null;
+    postalAddress?: string | null;
+    representativeName?: string | null;
+    representativePosition?: string | null;
+    authorityBasis?: string | null;
+    bankName?: string | null;
+    bankBik?: string | null;
+    bankAccount?: string | null;
+    corrAccount?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
 }
 
 const TYPE_LABELS: Record<string, string> = {
   framework: "Рамочный",
   one_time: "Разовый",
   service: "Услуги",
+};
+
+const CONTRACT_KIND_LABELS: Record<string, string> = {
+  purchase: "Покупка",
+  sale: "Продажа",
+  carriage: "Перевозка",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -89,8 +114,9 @@ function formatAmount(value: string | number | null | undefined, currency: strin
 export function generateContractPrintHtml(data: ContractPrintData): string {
   const contract = data.contract;
   const cp = data.counterparty;
+  const organization = data.organization;
 
-  const contractType = TYPE_LABELS[String(contract.type ?? "")] ?? asText(contract.type);
+  const contractType = CONTRACT_KIND_LABELS[String(contract.contractKind ?? "")] ?? TYPE_LABELS[String(contract.type ?? "")] ?? asText(contract.type);
   const contractStatus = STATUS_LABELS[String(contract.status ?? "")] ?? asText(contract.status);
   const contractNumber = asText(contract.number);
   const contractSubject = asText(contract.subject);
@@ -101,6 +127,14 @@ export function generateContractPrintHtml(data: ContractPrintData): string {
   const partyName = asText(cp?.name);
   const partyShortName = asText(cp?.shortName);
   const partyType = asText(cp?.type);
+  const organizationName = asText(organization?.name);
+  const organizationRepresentative = [organization?.representativePosition, organization?.representativeName].filter(Boolean).join(" ") || "—";
+  const counterpartyRepresentative = [cp?.type, partyName].filter(Boolean).join(" ") || "—";
+  const partyLabels = contract.contractKind === "purchase"
+    ? { organization: "Покупатель", counterparty: "Продавец" }
+    : contract.contractKind === "sale"
+      ? { organization: "Продавец", counterparty: "Покупатель" }
+      : { organization: "Заказчик перевозки", counterparty: "Перевозчик" };
   const now = new Date().toLocaleString("ru-RU");
 
   return `<!doctype html>
@@ -228,7 +262,8 @@ export function generateContractPrintHtml(data: ContractPrintData): string {
       </section>
 
       <p class="clause">
-        Настоящий договор заключён между организацией «Заказчик» и контрагентом
+        Настоящий договор заключён между ${escapeHtml(partyLabels.organization)}
+        <strong>${escapeHtml(organizationName)}</strong> и ${escapeHtml(partyLabels.counterparty)}
         <strong>${escapeHtml(partyName)}</strong> на условиях, указанных ниже.
       </p>
 
@@ -258,32 +293,40 @@ export function generateContractPrintHtml(data: ContractPrintData): string {
         </tbody>
       </table>
 
-      <p class="section-title">2. Данные контрагента</p>
+      <p class="section-title">2. Реквизиты сторон</p>
       <table class="table">
         <tbody>
           <tr>
-            <td class="label">Полное наименование</td>
-            <td>${escapeHtml(partyName)}</td>
-          </tr>
-          <tr>
-            <td class="label">Краткое наименование</td>
-            <td>${escapeHtml(partyShortName)}</td>
-          </tr>
-          <tr>
-            <td class="label">Тип</td>
-            <td>${escapeHtml(partyType)}</td>
+            <td class="label">${escapeHtml(partyLabels.organization)}</td>
+            <td>${escapeHtml(organizationName)}</td>
           </tr>
           <tr>
             <td class="label">ИНН / ОГРН / КПП</td>
-            <td>${escapeHtml(asText(cp?.inn))} / ${escapeHtml(asText(cp?.ogrn))} / ${escapeHtml(asText(cp?.kpp))}</td>
+            <td>${escapeHtml(asText(organization?.inn))} / ${escapeHtml(asText(organization?.ogrn))} / ${escapeHtml(asText(organization?.kpp))}</td>
           </tr>
           <tr>
-            <td class="label">Юридический адрес</td>
-            <td>${asMultiline(cp?.legalAddress)}</td>
+            <td class="label">Юридический / почтовый адрес</td>
+            <td>${asMultiline(organization?.legalAddress)} / ${asMultiline(organization?.postalAddress)}</td>
           </tr>
           <tr>
-            <td class="label">Фактический адрес</td>
-            <td>${asMultiline(cp?.actualAddress)}</td>
+            <td class="label">Банк / БИК</td>
+            <td>${escapeHtml(asText(organization?.bankName))} / ${escapeHtml(asText(organization?.bankBik))}</td>
+          </tr>
+          <tr>
+            <td class="label">Расчётный / Корр. счёт</td>
+            <td>${escapeHtml(asText(organization?.bankAccount))} / ${escapeHtml(asText(organization?.corrAccount))}</td>
+          </tr>
+          <tr>
+            <td class="label">${escapeHtml(partyLabels.counterparty)}</td>
+            <td>${escapeHtml(partyName)} (${escapeHtml(partyShortName)})</td>
+          </tr>
+          <tr>
+            <td class="label">Тип / ИНН / ОГРН / КПП</td>
+            <td>${escapeHtml(partyType)} / ${escapeHtml(asText(cp?.inn))} / ${escapeHtml(asText(cp?.ogrn))} / ${escapeHtml(asText(cp?.kpp))}</td>
+          </tr>
+          <tr>
+            <td class="label">Юридический / фактический адрес</td>
+            <td>${asMultiline(cp?.legalAddress)} / ${asMultiline(cp?.actualAddress)}</td>
           </tr>
           <tr>
             <td class="label">Банк / БИК</td>
@@ -293,22 +336,20 @@ export function generateContractPrintHtml(data: ContractPrintData): string {
             <td class="label">Расчётный / Корр. счёт</td>
             <td>${escapeHtml(asText(cp?.bankAccount))} / ${escapeHtml(asText(cp?.corrAccount))}</td>
           </tr>
-          <tr>
-            <td class="label">Телефон / Email</td>
-            <td>${escapeHtml(asText(cp?.phone))} / ${escapeHtml(asText(cp?.email))}</td>
-          </tr>
         </tbody>
       </table>
 
       <p class="section-title">3. Подписи сторон</p>
       <div class="signatures">
         <div class="signature-box">
-          <p><strong>Заказчик</strong></p>
-          <p class="signature-line">Ф.И.О., подпись, печать</p>
+          <p><strong>${escapeHtml(partyLabels.organization)}</strong></p>
+          <p>${escapeHtml(organizationName)}</p>
+          <p class="signature-line">${escapeHtml(organizationRepresentative)} / подпись / печать</p>
         </div>
         <div class="signature-box">
-          <p><strong>Контрагент</strong></p>
-          <p class="signature-line">${escapeHtml(partyName)} / подпись / печать</p>
+          <p><strong>${escapeHtml(partyLabels.counterparty)}</strong></p>
+          <p>${escapeHtml(partyName)}</p>
+          <p class="signature-line">${escapeHtml(counterpartyRepresentative)} / подпись / печать</p>
         </div>
       </div>
 

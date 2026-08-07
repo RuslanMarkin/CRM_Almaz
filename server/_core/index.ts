@@ -1,7 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import { getContractById, getWaybillDetails, migrateDatabase } from "../db";
+import { getContractById, getDocumentAttachmentById, getOrganizationProfile, getWaybillDetails, migrateDatabase } from "../db";
+import { getAttachmentDownloadUrl } from "../attachmentStorage";
 import { generateContractPrintHtml } from "../contractPrintService";
 import { generateWaybillPrintHtml } from "../waybillPrintService";
 import { generateWaybillXlsx } from "../waybillXlsxService";
@@ -51,6 +52,25 @@ async function startServer() {
   registerStorageProxy(app);
   app.get("/api/health", (_req, res) => {
     res.status(200).json({ ok: true });
+  });
+  app.get("/api/attachments/:id/file", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid attachment ID" });
+      return;
+    }
+    try {
+      const attachment = await getDocumentAttachmentById(id);
+      if (!attachment?.storageKey) {
+        res.status(404).json({ error: "Attachment file not found" });
+        return;
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      res.redirect(302, await getAttachmentDownloadUrl(attachment.storageKey));
+    } catch (error) {
+      console.error("Attachment download error:", error);
+      res.status(500).json({ error: "Failed to get attachment file" });
+    }
   });
   // Keep legacy PDF links pointed at the single approved SP-31 print form.
   app.get("/api/waybills/:id/pdf", async (req, res) => {
@@ -131,6 +151,7 @@ async function startServer() {
       const html = generateContractPrintHtml({
         contract: contractData.contract,
         counterparty: contractData.counterparty,
+        organization: await getOrganizationProfile(),
       });
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -153,6 +174,7 @@ async function startServer() {
       const html = generateContractPrintHtml({
         contract: (body.contract ?? {}) as any,
         counterparty: (body.counterparty ?? null) as any,
+        organization: await getOrganizationProfile(),
       });
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");

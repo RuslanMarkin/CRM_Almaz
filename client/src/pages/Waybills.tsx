@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { ScanAttachments } from "@/components/ScanAttachments";
 import { WAYBILL_STATUSES, formatDate, formatWeight } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   Building2,
-  Download,
+  CheckCircle2,
   Eye,
   FileSpreadsheet,
   Link2,
@@ -36,7 +37,6 @@ import {
   Package,
   Pencil,
   Plus,
-  Printer,
   Search,
   Trash2,
   Truck,
@@ -100,6 +100,13 @@ interface QuickPartyForm {
   phone: string;
 }
 
+interface ClosureForm {
+  dispatchedWeight: string;
+  receivedWeight: string;
+  closedAt: string;
+  closureNotes: string;
+}
+
 const partyLabels: Record<PartyRole, string> = {
   supplier: "Поставщик / грузоотправитель",
   buyer: "Грузополучатель",
@@ -118,6 +125,29 @@ const quickPartyEmpty: QuickPartyForm = {
   actualAddress: "",
   phone: "",
 };
+
+function createEmptyClosureForm(): ClosureForm {
+  return {
+    dispatchedWeight: "",
+    receivedWeight: "",
+    closedAt: new Date().toISOString().split("T")[0],
+    closureNotes: "",
+  };
+}
+
+function getWeightVariance(planned: string | number | null | undefined, actual: string | number | null | undefined) {
+  if (planned === null || planned === undefined || planned === "" || actual === null || actual === undefined || actual === "") return null;
+  const plannedValue = Number(planned);
+  const actualValue = Number(actual);
+  if (!Number.isFinite(plannedValue) || plannedValue <= 0 || !Number.isFinite(actualValue)) return null;
+
+  const difference = actualValue - plannedValue;
+  return { difference, percent: (difference / plannedValue) * 100 };
+}
+
+function formatSignedWeight(value: number) {
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("ru-RU", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} т`;
+}
 
 function createEmptyForm(): FormState {
   return {
@@ -253,6 +283,9 @@ export default function Waybills() {
   const [quickPartyOpen, setQuickPartyOpen] = useState(false);
   const [quickPartyRole, setQuickPartyRole] = useState<PartyRole>("supplier");
   const [quickParty, setQuickParty] = useState<QuickPartyForm>(quickPartyEmpty);
+  const [closureOpen, setClosureOpen] = useState(false);
+  const [closingWaybill, setClosingWaybill] = useState<any | null>(null);
+  const [closureForm, setClosureForm] = useState<ClosureForm>(createEmptyClosureForm);
   const utils = trpc.useUtils();
 
   const { data: list, isLoading } = trpc.waybills.list.useQuery({
@@ -297,6 +330,19 @@ export default function Waybills() {
     onSuccess: () => {
       utils.waybills.list.invalidate();
       toast.success("Статус обновлён");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const closeMutation = trpc.waybills.close.useMutation({
+    onSuccess: () => {
+      utils.waybills.list.invalidate();
+      utils.waybills.getDetails.invalidate();
+      utils.specifications.list.invalidate();
+      setClosureOpen(false);
+      setClosingWaybill(null);
+      setClosureForm(createEmptyClosureForm());
+      toast.success("ТТН закрыта, фактический вес сохранён");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -428,7 +474,7 @@ export default function Waybills() {
         supplierName: party ? party.shortName ?? party.name : "",
         loadingAddress: keepsSpecification ? previous.loadingAddress : party?.actualAddress || party?.legalAddress || "",
         ...(clearsPreviousSpecification
-          ? { unloadingAddress: "", cargoName: "", pricePerUnit: "", currency: "RUB" }
+          ? { unloadingAddress: "", cargoName: "", quantity: "", pricePerUnit: "", currency: "RUB" }
           : {}),
       };
     });
@@ -450,6 +496,7 @@ export default function Waybills() {
       loadingAddress: specification.loadingAddress ?? previous.loadingAddress,
       unloadingAddress: specification.unloadingAddress ?? previous.unloadingAddress,
       cargoName: specification.cargoName ?? previous.cargoName,
+      quantity: specification.volumeTotal ?? previous.quantity,
       pricePerUnit: specification.pricePerUnit ?? previous.pricePerUnit,
       currency: specification.currency ?? previous.currency,
       supplierId: party ? String(party.id) : previous.supplierId,
@@ -529,6 +576,7 @@ export default function Waybills() {
     }
     createPartyMutation.mutate({
       name: quickParty.name.trim(),
+      businessRole: quickPartyRole === "supplier" ? "seller" : quickPartyRole === "buyer" || quickPartyRole === "payer" ? "buyer" : "carrier",
       shortName: quickParty.shortName || undefined,
       type: quickParty.type,
       inn: quickParty.inn || undefined,
@@ -548,6 +596,38 @@ export default function Waybills() {
         next.netWeight = (gross - tare).toFixed(3);
       }
       return next;
+    });
+  }
+
+  function openClosure(waybill: any) {
+    setClosingWaybill(waybill);
+    setClosureForm({
+      dispatchedWeight: waybill.dispatchedWeight ?? "",
+      receivedWeight: waybill.receivedWeight ?? "",
+      closedAt: waybill.closedAt ? new Date(waybill.closedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      closureNotes: waybill.closureNotes ?? "",
+    });
+    setClosureOpen(true);
+  }
+
+  function submitClosure() {
+    if (!closingWaybill) return;
+    if (!closureForm.dispatchedWeight || Number(closureForm.dispatchedWeight) <= 0) {
+      toast.error("Укажите вес отгруженного товара");
+      return;
+    }
+    if (!closureForm.receivedWeight || Number(closureForm.receivedWeight) <= 0) {
+      toast.error("Укажите вес, принятый покупателем");
+      return;
+    }
+
+    const optionalText = (value: string) => value || undefined;
+    closeMutation.mutate({
+      id: closingWaybill.id,
+      dispatchedWeight: optionalText(closureForm.dispatchedWeight),
+      receivedWeight: optionalText(closureForm.receivedWeight),
+      closedAt: closureForm.closedAt ? new Date(closureForm.closedAt) : undefined,
+      closureNotes: optionalText(closureForm.closureNotes),
     });
   }
 
@@ -597,7 +677,7 @@ export default function Waybills() {
       cargoClass: optionalText(form.cargoClass),
       pricePerUnit: optionalText(form.pricePerUnit),
       currency: form.currency,
-      status: form.status,
+      status: editId ? undefined : form.status,
       waybillDate: form.waybillDate ? new Date(form.waybillDate) : undefined,
       declarationInfo: optionalText(form.declarationInfo),
       notes: optionalText(form.notes),
@@ -676,7 +756,7 @@ export default function Waybills() {
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">№ ТТН</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase hidden md:table-cell">Отправитель → получатель</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase hidden lg:table-cell">Перевозчик</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase hidden xl:table-cell">Нетто</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase hidden xl:table-cell">План / факт</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Статус</th>
                 <th className="px-4 py-3 w-10" />
               </tr>
@@ -684,6 +764,8 @@ export default function Waybills() {
             <tbody className="divide-y divide-border">
               {list.map((waybill) => {
                 const statusInfo = WAYBILL_STATUSES[waybill.status as keyof typeof WAYBILL_STATUSES];
+                const planVariance = getWeightVariance(waybill.quantity, waybill.dispatchedWeight);
+                const receiptVariance = getWeightVariance(waybill.dispatchedWeight, waybill.receivedWeight);
                 return (
                   <tr key={waybill.id} className="hover:bg-muted/20 transition-colors group">
                     <td className="px-4 py-3">
@@ -701,22 +783,46 @@ export default function Waybills() {
                         {[waybill.tractorNumber, waybill.trailerNumber].filter(Boolean).join(" / ")}
                       </p>
                     </td>
-                    <td className="px-4 py-3 hidden xl:table-cell text-sm">{formatWeight(waybill.netWeight)}</td>
+                    <td className="px-4 py-3 hidden xl:table-cell text-sm">
+                      <p>План: {formatWeight(waybill.quantity)}</p>
+                      {waybill.dispatchedWeight && waybill.receivedWeight ? (
+                        <>
+                          <p className="text-muted-foreground">Отгружено: {formatWeight(waybill.dispatchedWeight)}</p>
+                          <p className="text-muted-foreground">Принято: {formatWeight(waybill.receivedWeight)}</p>
+                          {planVariance && (
+                            <p className={planVariance.difference === 0 ? "text-muted-foreground" : planVariance.difference > 0 ? "text-emerald-700" : "text-red-700"}>
+                              От плана: {formatSignedWeight(planVariance.difference)} ({planVariance.percent > 0 ? "+" : ""}{planVariance.percent.toFixed(1)}%)
+                            </p>
+                          )}
+                          {receiptVariance && (
+                            <p className={receiptVariance.difference === 0 ? "text-muted-foreground" : receiptVariance.difference > 0 ? "text-emerald-700" : "text-red-700"}>
+                              Приёмка: {formatSignedWeight(receiptVariance.difference)} ({receiptVariance.percent > 0 ? "+" : ""}{receiptVariance.percent.toFixed(1)}%)
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Вес не зафиксирован</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="cursor-pointer">
-                            <StatusBadge label={statusInfo?.label ?? waybill.status} color={statusInfo?.color ?? "bg-slate-100 text-slate-600"} />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          {Object.entries(WAYBILL_STATUSES).map(([key, value]) => (
-                            <DropdownMenuItem key={key} onClick={() => updateStatusMutation.mutate({ id: waybill.id, status: key as WaybillStatus })}>
-                              <StatusBadge label={value.label} color={value.color} />
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {waybill.status === "delivered" ? (
+                        <StatusBadge label={statusInfo?.label ?? waybill.status} color={statusInfo?.color ?? "bg-slate-100 text-slate-600"} />
+                      ) : (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="cursor-pointer">
+                              <StatusBadge label={statusInfo?.label ?? waybill.status} color={statusInfo?.color ?? "bg-slate-100 text-slate-600"} />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {Object.entries(WAYBILL_STATUSES).filter(([key]) => key !== "delivered").map(([key, value]) => (
+                              <DropdownMenuItem key={key} onClick={() => updateStatusMutation.mutate({ id: waybill.id, status: key as WaybillStatus })}>
+                                <StatusBadge label={value.label} color={value.color} />
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <DropdownMenu>
@@ -727,10 +833,11 @@ export default function Waybills() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setDetailsId(waybill.id)}><Eye className="mr-2" /> Связи и участники</DropdownMenuItem>
+                          {waybill.status !== "delivered" && waybill.status !== "cancelled" && (
+                            <DropdownMenuItem onClick={() => openClosure(waybill)}><CheckCircle2 className="mr-2" /> Закрыть ТТН</DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => openEdit(waybill)}><Pencil className="mr-2" /> Редактировать</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(`/api/waybills/${waybill.id}/print`, "_blank")}><Printer className="mr-2" /> Итоговая ТТН по образцу</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { window.location.href = `/api/waybills/${waybill.id}/print?download=1`; }}><Download className="mr-2" /> Скачать печатную форму</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { window.location.href = `/api/waybills/${waybill.id}/xlsx`; }}><FileSpreadsheet className="mr-2" /> Скачать XLSX</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { window.location.href = `/api/waybills/${waybill.id}/xlsx`; }}><FileSpreadsheet className="mr-2" /> Скачать ТТН XLSX</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive" onClick={() => {
                             if (confirm("Удалить накладную?")) deleteMutation.mutate({ id: waybill.id });
                           }}>
@@ -787,6 +894,23 @@ export default function Waybills() {
                   <Label>Дата ТТН</Label>
                   <Input type="date" value={form.waybillDate} onChange={field("waybillDate")} className="mt-1" />
                 </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <ScanAttachments
+                  entityType="contract"
+                  entityId={form.contractId ? Number(form.contractId) : null}
+                  documentKind="contract_scan"
+                  title="Сканы выбранного договора"
+                  compact
+                />
+                <ScanAttachments
+                  entityType="contract"
+                  entityId={form.contractId ? Number(form.contractId) : null}
+                  documentKind="specification_scan"
+                  specificationId={form.specificationId ? Number(form.specificationId) : null}
+                  title="Сканы выбранной спецификации"
+                  compact
+                />
               </div>
             </section>
 
@@ -845,7 +969,11 @@ export default function Waybills() {
                   <Select value={form.status} onValueChange={(value) => setForm((previous) => ({ ...previous, status: value as WaybillStatus }))}>
                     <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {Object.entries(WAYBILL_STATUSES).map(([key, value]) => <SelectItem key={key} value={key}>{value.label}</SelectItem>)}
+                      {form.status === "delivered" ? (
+                        <SelectItem value="delivered">{WAYBILL_STATUSES.delivered.label}</SelectItem>
+                      ) : (
+                        Object.entries(WAYBILL_STATUSES).filter(([key]) => key !== "delivered").map(([key, value]) => <SelectItem key={key} value={key}>{value.label}</SelectItem>)
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -858,6 +986,44 @@ export default function Waybills() {
             <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
               {editId ? "Сохранить" : "Создать ТТН"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={closureOpen} onOpenChange={(open) => {
+        setClosureOpen(open);
+        if (!open) setClosingWaybill(null);
+      }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Закрыть ТТН № {closingWaybill?.number ?? ""}</DialogTitle>
+            <DialogDescription>Зафиксируйте вес при отгрузке и вес, принятый покупателем.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><Label>Плановый вес</Label><div className="mt-1 flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium">{formatWeight(closingWaybill?.quantity)}</div></div>
+              <div><Label>Дата закрытия</Label><Input type="date" value={closureForm.closedAt} onChange={(event) => setClosureForm((previous) => ({ ...previous, closedAt: event.target.value }))} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><Label>Отгружено, т *</Label><Input value={closureForm.dispatchedWeight} onChange={(event) => setClosureForm((previous) => ({ ...previous, dispatchedWeight: event.target.value }))} type="number" min="0" step="0.001" className="mt-1 font-mono" /></div>
+              <div><Label>Принято покупателем, т *</Label><Input value={closureForm.receivedWeight} onChange={(event) => setClosureForm((previous) => ({ ...previous, receivedWeight: event.target.value }))} type="number" min="0" step="0.001" className="mt-1 font-mono" /></div>
+            </div>
+            {(() => {
+              const planVariance = getWeightVariance(closingWaybill?.quantity, closureForm.dispatchedWeight);
+              const receiptVariance = getWeightVariance(closureForm.dispatchedWeight, closureForm.receivedWeight);
+              if (!planVariance && !receiptVariance) return null;
+              return (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                  {planVariance && <p className="font-medium">Отгружено к плану: <span className={planVariance.difference === 0 ? "text-foreground" : planVariance.difference > 0 ? "text-emerald-700" : "text-red-700"}>{formatSignedWeight(planVariance.difference)} ({planVariance.percent > 0 ? "+" : ""}{planVariance.percent.toFixed(1)}%)</span></p>}
+                  {receiptVariance && <p className="mt-1 font-medium">Принято к отгрузке: <span className={receiptVariance.difference === 0 ? "text-foreground" : receiptVariance.difference > 0 ? "text-emerald-700" : "text-red-700"}>{formatSignedWeight(receiptVariance.difference)} ({receiptVariance.percent > 0 ? "+" : ""}{receiptVariance.percent.toFixed(1)}%)</span></p>}
+                </div>
+              );
+            })()}
+            <div><Label>Комментарий по закрытию</Label><Textarea value={closureForm.closureNotes} onChange={(event) => setClosureForm((previous) => ({ ...previous, closureNotes: event.target.value }))} rows={3} className="mt-1 resize-none" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClosureOpen(false)}>Отмена</Button>
+            <Button onClick={submitClosure} disabled={closeMutation.isPending}><CheckCircle2 /> Закрыть ТТН</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -921,10 +1087,30 @@ export default function Waybills() {
                   <p className="text-xs text-muted-foreground">{[details.waybill.vehicleMake, details.waybill.tractorNumber, details.waybill.trailerNumber].filter(Boolean).join(" / ")}</p>
                 </div>
               </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Закрытие и вес товара</p>
+                {details.waybill.dispatchedWeight && details.waybill.receivedWeight ? (
+                  (() => {
+                    const planVariance = getWeightVariance(details.waybill.quantity, details.waybill.dispatchedWeight);
+                    const receiptVariance = getWeightVariance(details.waybill.dispatchedWeight, details.waybill.receivedWeight);
+                    return (
+                      <div className="mt-1 text-sm">
+                        <p>План: {formatWeight(details.waybill.quantity)} · отгружено: {formatWeight(details.waybill.dispatchedWeight)} · принято: {formatWeight(details.waybill.receivedWeight)}</p>
+                        {planVariance && <p className={planVariance.difference === 0 ? "text-muted-foreground" : planVariance.difference > 0 ? "text-emerald-700" : "text-red-700"}>Отгружено к плану: {formatSignedWeight(planVariance.difference)} ({planVariance.percent > 0 ? "+" : ""}{planVariance.percent.toFixed(1)}%)</p>}
+                        {receiptVariance && <p className={receiptVariance.difference === 0 ? "text-muted-foreground" : receiptVariance.difference > 0 ? "text-emerald-700" : "text-red-700"}>Принято к отгрузке: {formatSignedWeight(receiptVariance.difference)} ({receiptVariance.percent > 0 ? "+" : ""}{receiptVariance.percent.toFixed(1)}%)</p>}
+                        <p className="text-xs text-muted-foreground">Закрыта: {formatDate(details.waybill.closedAt)}</p>
+                        {details.waybill.closureNotes && <p className="mt-2 text-sm text-muted-foreground">{details.waybill.closureNotes}</p>}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">Вес отгрузки и приёмки пока не внесён.</p>
+                )}
+              </div>
             </div>
           )}
           <DialogFooter>
-            {detailsId && <Button variant="outline" onClick={() => window.open(`/api/waybills/${detailsId}/print`, "_blank")}><Printer /> Печатная форма СП-31</Button>}
+            {detailsId && <Button variant="outline" onClick={() => { window.location.href = `/api/waybills/${detailsId}/xlsx`; }}><FileSpreadsheet /> Скачать ТТН XLSX</Button>}
             <Button onClick={() => setDetailsId(null)}>Закрыть</Button>
           </DialogFooter>
         </DialogContent>

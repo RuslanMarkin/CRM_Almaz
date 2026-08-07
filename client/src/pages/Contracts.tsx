@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { CONTRACT_STATUSES, CONTRACT_TYPES, formatDate, formatCurrency } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ScanAttachments } from "@/components/ScanAttachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,10 +33,24 @@ import { Link, useSearch } from "wouter";
 
 type ContractStatus = "draft" | "active" | "suspended" | "completed" | "terminated";
 type ContractType = "framework" | "one_time" | "service";
+type ContractKind = "purchase" | "sale" | "carriage";
+
+const CONTRACT_KIND_LABELS: Record<ContractKind, string> = {
+  purchase: "Покупка",
+  sale: "Продажа",
+  carriage: "Перевозка",
+};
+
+const requiredRoleByContractKind: Record<ContractKind, "seller" | "buyer" | "carrier"> = {
+  purchase: "seller",
+  sale: "buyer",
+  carriage: "carrier",
+};
 
 interface FormState {
   number: string;
   counterpartyId: string;
+  contractKind: ContractKind;
   type: ContractType;
   subject: string;
   startDate: string;
@@ -49,6 +64,7 @@ interface FormState {
 const emptyForm: FormState = {
   number: "",
   counterpartyId: "",
+  contractKind: "purchase",
   type: "framework",
   subject: "",
   startDate: "",
@@ -135,6 +151,7 @@ export default function Contracts() {
     setForm({
       number: row.contract.number ?? "",
       counterpartyId: String(row.contract.counterpartyId ?? ""),
+      contractKind: (row.contract.contractKind ?? "purchase") as ContractKind,
       type: row.contract.type ?? "framework",
       subject: row.contract.subject ?? "",
       startDate: row.contract.startDate ? new Date(row.contract.startDate).toISOString().split("T")[0] : "",
@@ -160,6 +177,7 @@ export default function Contracts() {
         body: JSON.stringify({
           contract: {
             number: form.number,
+            contractKind: form.contractKind,
             type: form.type,
             subject: form.subject,
             startDate: form.startDate || null,
@@ -238,6 +256,18 @@ export default function Contracts() {
       subject: p.subject || (cp ? `Договор с ${cp.shortName ?? cp.name}` : p.subject),
     }));
   }
+
+  function handleContractKindChange(contractKind: ContractKind) {
+    setForm((current) => {
+      const selected = counterparties?.find((counterparty) => String(counterparty.id) === current.counterpartyId);
+      const roleMatches = selected?.businessRole === requiredRoleByContractKind[contractKind];
+      return { ...current, contractKind, counterpartyId: roleMatches ? current.counterpartyId : "" };
+    });
+  }
+
+  const eligibleCounterparties = counterparties?.filter(
+    (counterparty) => counterparty.businessRole === requiredRoleByContractKind[form.contractKind],
+  );
 
   const f = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [key]: e.target.value }));
@@ -331,7 +361,7 @@ export default function Contracts() {
                         <div>
                           <p className="text-sm font-medium text-foreground">{contract.number}</p>
                           <p className="text-xs text-muted-foreground">
-                            {CONTRACT_TYPES[contract.type as keyof typeof CONTRACT_TYPES] ?? contract.type}
+                            {contract.contractKind ? CONTRACT_KIND_LABELS[contract.contractKind as ContractKind] : "Тип не назначен"}
                           </p>
                         </div>
                       </div>
@@ -345,7 +375,7 @@ export default function Contracts() {
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <span className="text-xs text-muted-foreground">
-                        {CONTRACT_TYPES[contract.type as keyof typeof CONTRACT_TYPES] ?? contract.type}
+                        {contract.contractKind ? CONTRACT_KIND_LABELS[contract.contractKind as ContractKind] : "Тип не назначен"}
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden xl:table-cell">
@@ -420,13 +450,11 @@ export default function Contracts() {
                 <Input value={form.number} onChange={f("number")} placeholder="Д-2025/001" className="mt-1" />
               </div>
               <div>
-                <Label>Тип</Label>
-                <Select value={form.type} onValueChange={(v) => setForm((p) => ({ ...p, type: v as ContractType }))}>
+                <Label>Вид договора</Label>
+                <Select value={form.contractKind} onValueChange={(v) => handleContractKindChange(v as ContractKind)}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="framework">Рамочный</SelectItem>
-                    <SelectItem value="one_time">Разовый</SelectItem>
-                    <SelectItem value="service">Услуги</SelectItem>
+                    {Object.entries(CONTRACT_KIND_LABELS).map(([kind, label]) => <SelectItem value={kind} key={kind}>{label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -437,7 +465,7 @@ export default function Contracts() {
               <Select value={form.counterpartyId} onValueChange={handleCounterpartyChange}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Выберите контрагента" /></SelectTrigger>
                 <SelectContent>
-                  {counterparties?.map((cp) => (
+                  {eligibleCounterparties?.map((cp) => (
                     <SelectItem key={cp.id} value={String(cp.id)}>
                       {cp.shortName ?? cp.name}
                       {cp.inn && <span className="text-muted-foreground ml-2 text-xs">{cp.inn}</span>}
@@ -445,6 +473,7 @@ export default function Contracts() {
                   ))}
                 </SelectContent>
               </Select>
+              {!eligibleCounterparties?.length && <p className="mt-1 text-xs text-amber-700">Нет контрагентов с нужной ролью. Сначала создайте карточку контрагента.</p>}
             </div>
 
             <div>
@@ -485,6 +514,13 @@ export default function Contracts() {
               <Label>Примечания</Label>
               <Textarea value={form.notes} onChange={f("notes")} className="mt-1 resize-none" rows={2} />
             </div>
+
+            <ScanAttachments
+              entityType="contract"
+              entityId={editId}
+              documentKind="contract_scan"
+              title="Сканы договора"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => void openDraftPrintForm()}>

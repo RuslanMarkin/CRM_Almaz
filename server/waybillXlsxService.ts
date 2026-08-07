@@ -14,7 +14,7 @@ interface ZipEntry {
   data: Buffer;
 }
 
-const TEMPLATE_PATH = path.join(process.cwd(), "server", "templates", "sp31-waybill-template.xlsx");
+const TEMPLATE_PATH = path.join(process.cwd(), "server", "templates", "ttn-waybill-template.xlsx");
 const CRC_TABLE = makeCrcTable();
 
 function makeCrcTable(): number[] {
@@ -191,6 +191,18 @@ function setCellValue(sheetXml: string, cell: string, value: unknown): string {
   return sheetXml.replace(rowPattern, `$1${replacement(`r="${cell}"`)}`);
 }
 
+function hideRows(sheetXml: string, rows: number[]): string {
+  return rows.reduce((sheet, row) => {
+    const rowPattern = new RegExp(`<row([^>]*\\sr="${row}"[^>]*)>`, "g");
+    return sheet.replace(rowPattern, (match, attrs: string) => {
+      const nextAttrs = attrs.includes(" hidden=")
+        ? attrs.replace(/\shidden="[^"]*"/, ' hidden="1"')
+        : `${attrs} hidden="1"`;
+      return `<row${nextAttrs}>`;
+    });
+  }, sheetXml);
+}
+
 function formatDateParts(value: Date | string | null | undefined): {
   day: string;
   month: string;
@@ -212,6 +224,12 @@ function formatDateParts(value: Date | string | null | undefined): {
     yearSuffix: year.slice(2),
     year,
   };
+}
+
+function formatDate(value: Date | string | null | undefined): string {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ru-RU");
 }
 
 function formatNumber(value: string | number | null | undefined, digits = 2): string {
@@ -247,6 +265,34 @@ function calculateAmount(data: WaybillPrintData): string {
   return formatNumber(net * price, 2);
 }
 
+function formatPersonSignatureName(value: string | null | undefined): string {
+  const parts = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts[0] ?? "";
+  const [lastName, firstName, middleName] = parts;
+  const initials = [firstName, middleName]
+    .filter(Boolean)
+    .map((part) => `${part[0]}.`)
+    .join("");
+  return `${lastName} ${initials}`.trim();
+}
+
+function basisLine(data: WaybillPrintData): string {
+  const contract = data.contract
+    ? [
+        `Договор № ${data.contract.number}`,
+        data.contract.startDate ? `от ${formatDate(data.contract.startDate)}` : null,
+      ].filter(Boolean).join(" ")
+    : "Договор №";
+  const specification = data.specification
+    ? [
+        `Спец (при наличии) № ${data.specification.number}`,
+        data.specification.startDate ? `от ${formatDate(data.specification.startDate)}` : null,
+      ].filter(Boolean).join(" ")
+    : "Спец (при наличии) №";
+
+  return `${contract}. ${specification}`;
+}
+
 function formatFormNumber(value: string): string {
   const parts = value.split("-").map(part => part.trim()).filter(Boolean);
   return parts.at(-1) || value;
@@ -255,59 +301,66 @@ function formatFormNumber(value: string): string {
 function updateSheet1(xml: string, data: WaybillPrintData): string {
   const { waybill, supplier, buyer, carrier, vehicleOwner, payer } = data;
   const date = formatDateParts(waybill.waybillDate);
+  const organization = carrier ?? supplier;
+  const organizationName = carrier ? waybill.carrierName : waybill.supplierName;
   const values: Record<string, unknown> = {
-    AA5: formatFormNumber(waybill.number),
-    I6: date.day,
-    L6: date.monthName,
-    U6: date.century,
-    V6: date.yearSuffix,
-    AK7: date.day,
-    AM7: date.month,
-    AP7: date.year,
-    F9: partyLine(supplier, waybill.supplierName),
-    AK9: supplier?.okpo ?? "",
-    H10: waybill.vehicleMake,
-    X10: waybill.tractorNumber,
-    AB10: `к путевому листу № ${waybill.tripSheetNumber ?? ""}`,
-    O11: partyLine(carrier, waybill.carrierName),
-    O12: partyLine(vehicleOwner, waybill.vehicleOwnerName),
-    E15: waybill.driverName,
-    Z15: "Автотранспорт",
-    E18: partyLine(payer, waybill.payerName),
-    E21: partyLine(supplier, waybill.supplierName),
-    E24: waybill.loadingAddress,
-    H28: partyLine(buyer, waybill.buyerName),
-    E32: waybill.unloadingAddress,
-    AH31: waybill.routeNumber,
-    U35: waybill.trailerNumber,
-    F41: waybill.cargoName,
-    F72: waybill.declarationInfo,
-    A44: `Сорт, класс        ${waybill.cargoGrade ?? ""}`,
-    S44: formatNumber(waybill.impurityPercent),
-    AG44: formatNumber(waybill.moisturePercent),
-    H49: waybill.packageType || "н/у",
-    K49: formatNumber(waybill.quantity, 3),
-    O49: waybill.cargoClass,
-    R49: formatKg(waybill.grossWeight),
-    V49: formatKg(waybill.tareWeight),
-    Z49: formatKg(waybill.netWeight),
-    AE49: formatNumber(waybill.pricePerUnit),
-    AK49: calculateAmount(data),
-    AG67: formatKg(waybill.netWeight),
-    AF70: waybill.driverName,
+    A1: "",
+    BT3: formatFormNumber(waybill.number),
+    AI4: date.day,
+    AO4: date.monthName,
+    BE4: date.yearSuffix,
+    CS5: date.day,
+    CW5: date.month,
+    DA5: date.year,
+    N6: "",
+    CS6: "",
+    N9: partyLine(organization, organizationName),
+    CS9: organization?.okpo ?? "",
+    S11: waybill.vehicleMake,
+    BK11: waybill.tractorNumber,
+    CS11: waybill.tripSheetNumber,
+    AJ13: partyLine(vehicleOwner, waybill.vehicleOwnerName),
+    K15: waybill.driverName,
+    O17: partyLine(payer, waybill.payerName),
+    L20: partyLine(supplier, waybill.supplierName),
+    L22: waybill.loadingAddress,
+    R25: partyLine(buyer, waybill.buyerName),
+    L28: waybill.unloadingAddress,
+    CQ27: waybill.routeNumber,
+    AY31: waybill.trailerNumber,
+    CQ30: waybill.garageNumber,
+    M37: waybill.cargoName,
+    M39: waybill.cargoGrade,
+    AV39: formatNumber(waybill.impurityPercent),
+    CE39: formatNumber(waybill.moisturePercent),
+    U45: waybill.packageType || "н/у",
+    AB45: formatNumber(waybill.quantity, 3),
+    AK45: waybill.cargoClass,
+    AS45: formatKg(waybill.grossWeight),
+    BB45: formatKg(waybill.tareWeight),
+    BK45: formatKg(waybill.netWeight),
+    BT45: formatNumber(waybill.pricePerUnit),
+    CJ45: calculateAmount(data),
+    AZ59: "",
+    CA59: "",
+    CA61: formatKg(waybill.netWeight),
+    W63: "",
+    AJ63: "",
+    BX63: "",
+    CK63: formatPersonSignatureName(waybill.driverName),
+    N65: waybill.declarationInfo,
   };
 
-  return Object.entries(values).reduce((sheet, [cell, value]) => setCellValue(sheet, cell, value), xml);
+  const sheetWithValues = Object.entries(values).reduce((sheet, [cell, value]) => setCellValue(sheet, cell, value), xml);
+  return hideRows(sheetWithValues, [1, 2, 6, 7, 8]);
 }
 
 function updateSheet2(xml: string, data: WaybillPrintData): string {
   const { waybill } = data;
   const values: Record<string, unknown> = {
-    F16: waybill.supplierName,
-    M16: "механический",
-    T16: "обязательно к заполнению",
-    AB16: "обязательно к заполнению",
-    F18: waybill.buyerName,
+    O15: waybill.supplierName,
+    AI15: "механический",
+    O16: waybill.buyerName,
   };
 
   return Object.entries(values).reduce((sheet, [cell, value]) => setCellValue(sheet, cell, value), xml);

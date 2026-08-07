@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { SPEC_STATUSES, formatDate, formatCurrency, formatVolume } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ScanAttachments } from "@/components/ScanAttachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -496,6 +497,14 @@ export default function Specifications() {
               <Label>Примечания</Label>
               <Textarea value={form.notes} onChange={f("notes")} className="mt-1 resize-none" rows={2} />
             </div>
+
+            <ScanAttachments
+              entityType="contract"
+              entityId={form.contractId ? Number(form.contractId) : null}
+              documentKind="specification_scan"
+              specificationId={editId}
+              title="Скан спецификации в договоре"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Отмена</Button>
