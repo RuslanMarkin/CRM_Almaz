@@ -14,6 +14,8 @@ import Waybills from "./pages/Waybills";
 import AgroTradePrototype from "./pages/AgroTradePrototype";
 import Login from "./pages/Login";
 import { useAuth } from "./_core/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { LogOut } from "lucide-react";
 
 function Router() {
   return (
@@ -68,14 +70,27 @@ function Router() {
 }
 
 function App() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, logout } = useAuth();
 
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          {loading ? <main className="min-h-screen bg-muted/30" /> : isAuthenticated ? <Router /> : <Login />}
+          {loading ? <main className="min-h-screen bg-muted/30" /> : isAuthenticated ? (
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                className="fixed right-4 top-4 z-[100] bg-background/95"
+                onClick={() => void logout()}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Выйти
+              </Button>
+              <Router />
+            </div>
+          ) : <Login />}
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
