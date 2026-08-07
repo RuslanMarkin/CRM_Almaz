@@ -14,12 +14,12 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   const clearedCookies: CookieCall[] = [];
 
   const user: AuthenticatedUser = {
-    id: 1,
+    id: 0,
     openId: "sample-user",
-    email: "sample@example.com",
+    email: null,
     name: "Sample User",
-    loginMethod: "manus",
-    role: "user",
+    loginMethod: "password",
+    role: "admin",
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -54,7 +54,7 @@ describe("auth.logout", () => {
     expect(clearedCookies[0]?.options).toMatchObject({
       maxAge: -1,
       secure: true,
-      sameSite: "none",
+      sameSite: "lax",
       httpOnly: true,
       path: "/",
     });

@@ -12,6 +12,8 @@ import Contracts from "./pages/Contracts";
 import Specifications from "./pages/Specifications";
 import Waybills from "./pages/Waybills";
 import AgroTradePrototype from "./pages/AgroTradePrototype";
+import Login from "./pages/Login";
+import { useAuth } from "./_core/hooks/useAuth";
 
 function Router() {
   return (
@@ -66,12 +68,14 @@ function Router() {
 }
 
 function App() {
+  const { isAuthenticated, loading } = useAuth();
+
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          {loading ? <main className="min-h-screen bg-muted/30" /> : isAuthenticated ? <Router /> : <Login />}
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

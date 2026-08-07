@@ -43,7 +43,17 @@ import { appRouter } from "./routers";
 
 function createContext(): TrpcContext {
   return {
-    user: null,
+    user: {
+      id: 0,
+      openId: "test-admin",
+      name: "test-admin",
+      email: null,
+      loginMethod: "password",
+      role: "admin",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    },
     req: {
       protocol: "https",
       headers: {},

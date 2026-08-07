@@ -1,10 +1,10 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User } from "../../drizzle/schema";
+import { getAuthenticatedUser, type AuthenticatedUser } from "./passwordAuth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
-  user: User | null;
+  user: AuthenticatedUser | null;
 };
 
 export async function createContext(
@@ -13,6 +13,6 @@ export async function createContext(
   return {
     req: opts.req,
     res: opts.res,
-    user: null,
+    user: await getAuthenticatedUser(opts.req),
   };
 }

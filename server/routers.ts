@@ -3,7 +3,8 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { anonymousProcedure, publicProcedure, router } from "./_core/trpc";
+import { createSessionToken, SESSION_MAX_AGE_MS, verifyAdminCredentials } from "./_core/passwordAuth";
 import {
   getCounterparties,
   getCounterpartyById,
@@ -43,6 +44,29 @@ import {
   getCounterpartyDocuments,
 } from "./db";
 import { deleteAttachmentObject, uploadAttachment, usesS3AttachmentStorage } from "./attachmentStorage";
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const loginFailures = new Map<string, { count: number; startedAt: number; blockedUntil?: number }>();
+
+function isLoginBlocked(ip: string): boolean {
+  const attempt = loginFailures.get(ip);
+  if (!attempt) return false;
+  const now = Date.now();
+  if (attempt.blockedUntil && attempt.blockedUntil > now) return true;
+  if (now - attempt.startedAt > LOGIN_WINDOW_MS) loginFailures.delete(ip);
+  return false;
+}
+
+function recordFailedLogin(ip: string) {
+  const now = Date.now();
+  const existing = loginFailures.get(ip);
+  const attempt = !existing || now - existing.startedAt > LOGIN_WINDOW_MS
+    ? { count: 1, startedAt: now }
+    : { ...existing, count: existing.count + 1 };
+  if (attempt.count >= MAX_FAILED_LOGIN_ATTEMPTS) attempt.blockedUntil = now + LOGIN_WINDOW_MS;
+  loginFailures.set(ip, attempt);
+}
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -300,8 +324,27 @@ export const appRouter = router({
   system: systemRouter,
 
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    me: anonymousProcedure.query((opts) => opts.ctx.user),
+    login: anonymousProcedure
+      .input(z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(1024) }))
+      .mutation(async ({ ctx, input }) => {
+        const ip = ctx.req.ip || "unknown";
+        if (isLoginBlocked(ip)) {
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Слишком много попыток входа. Повторите через 15 минут" });
+        }
+        if (!(await verifyAdminCredentials(input.username, input.password))) {
+          recordFailedLogin(ip);
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Неверный логин или пароль" });
+        }
+        loginFailures.delete(ip);
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, await createSessionToken(input.username), {
+          ...cookieOptions,
+          maxAge: SESSION_MAX_AGE_MS,
+        });
+        return { success: true } as const;
+      }),
+    logout: anonymousProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
