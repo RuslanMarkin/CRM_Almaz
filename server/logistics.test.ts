@@ -6,11 +6,11 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): TrpcContext {
   const user: AuthenticatedUser = {
-    id: 1,
+    id: 0,
     openId: "test-user",
-    email: "test@example.com",
+    email: null,
     name: "Test User",
-    loginMethod: "manus",
+    loginMethod: "password",
     role: "admin",
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -42,13 +42,13 @@ function createAnonymousContext(): TrpcContext {
   };
 }
 
-describe("public access", () => {
-  it("allows anonymous visitors to read shared data", async () => {
+describe("protected access", () => {
+  it("rejects anonymous visitors", async () => {
     const caller = appRouter.createCaller(createAnonymousContext());
 
-    await expect(caller.counterparties.list({})).resolves.toEqual(
-      expect.any(Array)
-    );
+    await expect(caller.counterparties.list({})).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
   });
 });
 
@@ -58,7 +58,7 @@ describe("auth.me", () => {
     const caller = appRouter.createCaller(ctx);
     const user = await caller.auth.me();
     expect(user).toBeDefined();
-    expect(user?.email).toBe("test@example.com");
+    expect(user?.email).toBeNull();
   });
 });
 

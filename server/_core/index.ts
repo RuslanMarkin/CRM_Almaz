@@ -1,7 +1,8 @@
 import "dotenv/config";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "http";
-import { getContractById, getWaybillDetails, migrateDatabase } from "../db";
+import { getContractById, getDocumentAttachmentById, getOrganizationProfile, getWaybillDetails, migrateDatabase } from "../db";
+import { getAttachmentDownloadUrl } from "../attachmentStorage";
 import { generateContractPrintHtml } from "../contractPrintService";
 import { generateWaybillPrintHtml } from "../waybillPrintService";
 import { generateWaybillXlsx } from "../waybillXlsxService";
@@ -11,6 +12,20 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic } from "./static";
+import { getAuthenticatedUser } from "./passwordAuth";
+
+async function requireAuthenticatedRequest(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!(await getAuthenticatedUser(req))) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+    next();
+  } catch (error) {
+    console.error("Request authentication error:", error);
+    res.status(500).json({ error: "Authentication unavailable" });
+  }
+}
 
 function safeDownloadName(value: string): string {
   const cleaned = value
@@ -45,12 +60,36 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+  app.set("trust proxy", 1);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  registerStorageProxy(app);
   app.get("/api/health", (_req, res) => {
     res.status(200).json({ ok: true });
+  });
+  app.use(
+    ["/api/attachments", "/api/waybills", "/api/contracts", "/manus-storage"],
+    requireAuthenticatedRequest,
+  );
+  registerStorageProxy(app);
+  app.get("/api/attachments/:id/file", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid attachment ID" });
+      return;
+    }
+    try {
+      const attachment = await getDocumentAttachmentById(id);
+      if (!attachment?.storageKey) {
+        res.status(404).json({ error: "Attachment file not found" });
+        return;
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      res.redirect(302, await getAttachmentDownloadUrl(attachment.storageKey));
+    } catch (error) {
+      console.error("Attachment download error:", error);
+      res.status(500).json({ error: "Failed to get attachment file" });
+    }
   });
   // Keep legacy PDF links pointed at the single approved SP-31 print form.
   app.get("/api/waybills/:id/pdf", async (req, res) => {
@@ -131,6 +170,7 @@ async function startServer() {
       const html = generateContractPrintHtml({
         contract: contractData.contract,
         counterparty: contractData.counterparty,
+        organization: await getOrganizationProfile(),
       });
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -153,6 +193,7 @@ async function startServer() {
       const html = generateContractPrintHtml({
         contract: (body.contract ?? {}) as any,
         counterparty: (body.counterparty ?? null) as any,
+        organization: await getOrganizationProfile(),
       });
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");

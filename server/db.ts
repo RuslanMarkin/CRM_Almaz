@@ -7,15 +7,22 @@ import {
   users,
   counterparties,
   contracts,
+  deals,
   specifications,
+  documentAttachments,
+  organizationProfiles,
   waybills,
   waybillCounter,
   type InsertCounterparty,
   type InsertContract,
+  type InsertDeal,
   type InsertSpecification,
+  type InsertDocumentAttachment,
+  type InsertOrganizationProfile,
   type InsertWaybill,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { resolveWaybillClosure, type WaybillClosureInput } from "./waybillClosure";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -200,10 +207,50 @@ export async function deleteContract(id: number) {
   await db.delete(contracts).where(eq(contracts.id, id));
 }
 
+// ─── Deals ──────────────────────────────────────────────────────────────────
+
+export async function getDeals(opts?: { status?: string }) {
+  const db = await getDb();
+  if (!db) return [];
+  if (opts?.status) {
+    return db.select().from(deals).where(sql`${deals.status} = ${opts.status}`).orderBy(desc(deals.createdAt));
+  }
+  return db.select().from(deals).orderBy(desc(deals.createdAt));
+}
+
+export async function getDealById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(deals).where(eq(deals.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createDeal(data: InsertDeal) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(deals).values(data);
+  return getDealById(Number(result[0].insertId));
+}
+
+export async function updateDeal(id: number, data: Partial<InsertDeal>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(deals).set(data).where(eq(deals.id, id));
+  return getDealById(id);
+}
+
+export async function deleteDeal(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(specifications).set({ dealId: null }).where(eq(specifications.dealId, id));
+  await db.delete(deals).where(eq(deals.id, id));
+}
+
 // ─── Specifications ──────────────────────────────────────────────────────────
 
 export async function getSpecifications(opts?: {
   search?: string;
+  dealId?: number;
   contractId?: number;
   counterpartyId?: number;
   status?: string;
@@ -212,6 +259,7 @@ export async function getSpecifications(opts?: {
   if (!db) return [];
   const conditions = [];
   if (opts?.search) conditions.push(like(specifications.number, `%${opts.search}%`));
+  if (opts?.dealId) conditions.push(eq(specifications.dealId, opts.dealId));
   if (opts?.contractId) conditions.push(eq(specifications.contractId, opts.contractId));
   if (opts?.counterpartyId) conditions.push(eq(specifications.counterpartyId, opts.counterpartyId));
   if (opts?.status) conditions.push(sql`${specifications.status} = ${opts.status}`);
@@ -271,6 +319,79 @@ export async function deleteSpecification(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(specifications).where(eq(specifications.id, id));
+}
+
+// ─── Document scan attachments ──────────────────────────────────────────────
+
+export type AttachmentEntityType = "contract" | "specification" | "counterparty" | "organization";
+export type AttachmentDocumentKind = "contract_scan" | "specification_scan" | "statutory_document" | "other";
+
+export async function getDocumentAttachments(
+  entityType: AttachmentEntityType,
+  entityId: number,
+  filters?: { documentKind?: AttachmentDocumentKind; specificationId?: number },
+) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    eq(documentAttachments.entityType, entityType),
+    eq(documentAttachments.entityId, entityId),
+  ];
+  if (filters?.documentKind) conditions.push(eq(documentAttachments.documentKind, filters.documentKind));
+  if (filters?.specificationId) conditions.push(eq(documentAttachments.specificationId, filters.specificationId));
+  return db
+    .select()
+    .from(documentAttachments)
+    .where(and(...conditions))
+    .orderBy(desc(documentAttachments.createdAt));
+}
+
+export async function getDocumentAttachmentById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(documentAttachments).where(eq(documentAttachments.id, id)).limit(1);
+  return result[0];
+}
+
+// ─── Own organization ───────────────────────────────────────────────────────
+
+export async function getOrganizationProfile() {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(organizationProfiles).orderBy(organizationProfiles.id).limit(1);
+  return result[0];
+}
+
+export async function upsertOrganizationProfile(data: Omit<InsertOrganizationProfile, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await getOrganizationProfile();
+  if (existing) {
+    await db.update(organizationProfiles).set(data).where(eq(organizationProfiles.id, existing.id));
+    return getOrganizationProfile();
+  }
+  await db.insert(organizationProfiles).values(data);
+  return getOrganizationProfile();
+}
+
+export async function createDocumentAttachment(data: InsertDocumentAttachment) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(documentAttachments).values(data);
+  const result = await db
+    .select()
+    .from(documentAttachments)
+    .where(and(eq(documentAttachments.entityType, data.entityType), eq(documentAttachments.entityId, data.entityId)))
+    .orderBy(desc(documentAttachments.createdAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function deleteDocumentAttachment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(documentAttachments).where(eq(documentAttachments.id, id));
+  return { success: true } as const;
 }
 
 // ─── Waybills ────────────────────────────────────────────────────────────────
@@ -480,10 +601,65 @@ export async function updateWaybill(id: number, data: Partial<InsertWaybill>) {
   await db.update(waybills).set(hydrated).where(eq(waybills.id, id));
 }
 
+export async function closeWaybill(
+  id: number,
+  data: WaybillClosureInput & { closedAt?: Date; closureNotes?: string }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [waybill] = await db.select().from(waybills).where(eq(waybills.id, id)).limit(1);
+  if (!waybill) throw new Error("Waybill not found");
+  if (waybill.status === "cancelled") throw new Error("Нельзя закрыть отменённую ТТН");
+
+  const closure = resolveWaybillClosure(data);
+  const closedAt = data.closedAt ?? new Date();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(waybills)
+      .set({
+        ...closure,
+        closedAt,
+        closureNotes: data.closureNotes?.trim() || null,
+        status: "delivered",
+      })
+      .where(eq(waybills.id, id));
+
+    if (waybill.specificationId) {
+      const [total] = await tx
+        .select({ total: sql<string>`coalesce(sum(${waybills.dispatchedWeight}), 0)` })
+        .from(waybills)
+        .where(and(eq(waybills.specificationId, waybill.specificationId), eq(waybills.status, "delivered")));
+
+      await tx
+        .update(specifications)
+        .set({ volumeShipped: String(total?.total ?? "0") })
+        .where(eq(specifications.id, waybill.specificationId));
+    }
+  });
+
+  return getWaybillById(id);
+}
+
 export async function deleteWaybill(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(waybills).where(eq(waybills.id, id));
+  const [waybill] = await db.select().from(waybills).where(eq(waybills.id, id)).limit(1);
+  await db.transaction(async (tx) => {
+    await tx.delete(waybills).where(eq(waybills.id, id));
+
+    if (waybill?.status === "delivered" && waybill.specificationId) {
+      const [total] = await tx
+        .select({ total: sql<string>`coalesce(sum(${waybills.dispatchedWeight}), 0)` })
+        .from(waybills)
+        .where(and(eq(waybills.specificationId, waybill.specificationId), eq(waybills.status, "delivered")));
+      await tx
+        .update(specifications)
+        .set({ volumeShipped: String(total?.total ?? "0") })
+        .where(eq(specifications.id, waybill.specificationId));
+    }
+  });
 }
 
 // ─── Stats for dashboard ─────────────────────────────────────────────────────

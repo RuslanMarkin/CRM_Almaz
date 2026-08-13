@@ -77,7 +77,9 @@ export function AppLayout({ children }: AppLayoutProps) {
               const isActive =
                 item.href === "/dashboard"
                   ? location === "/" || location === "/dashboard"
-                  : location.startsWith(item.href);
+                  : item.href === "/waybills"
+                    ? location.startsWith("/waybills") || location.startsWith("/ttn")
+                    : location.startsWith(item.href);
               return (
                 <Link
                   key={item.href}
