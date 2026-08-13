@@ -13,6 +13,7 @@ import Specifications from "./pages/Specifications";
 import Waybills from "./pages/Waybills";
 import AgroTradePrototype from "./pages/AgroTradePrototype";
 import Login from "./pages/Login";
+import RecycleBin from "./pages/RecycleBin";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
@@ -63,6 +64,11 @@ function Router() {
           <Waybills />
         </AppLayout>
       </Route>
+      <Route path="/recycle-bin">
+        <AppLayout>
+          <RecycleBin />
+        </AppLayout>
+      </Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -79,6 +85,14 @@ function App() {
           <Toaster />
           {loading ? <main className="min-h-screen bg-muted/30" /> : isAuthenticated ? (
             <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                className="fixed right-28 top-4 z-[100] bg-background/95"
+                onClick={() => { window.location.href = "/recycle-bin"; }}
+              >
+                Корзина
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
