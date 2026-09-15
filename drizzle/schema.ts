@@ -7,6 +7,7 @@ import {
   timestamp,
   varchar,
   decimal,
+  index,
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
@@ -54,6 +55,7 @@ export const counterparties = mysqlTable("counterparties", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Counterparty = typeof counterparties.$inferSelect;
@@ -78,6 +80,7 @@ export const contracts = mysqlTable("contracts", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Contract = typeof contracts.$inferSelect;
@@ -105,6 +108,7 @@ export const deals = mysqlTable("deals", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Deal = typeof deals.$inferSelect;
@@ -134,6 +138,7 @@ export const specifications = mysqlTable("specifications", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Specification = typeof specifications.$inferSelect;
@@ -157,6 +162,7 @@ export const documentAttachments = mysqlTable("document_attachments", {
   storageKey: varchar("storageKey", { length: 1024 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type DocumentAttachment = typeof documentAttachments.$inferSelect;
@@ -255,10 +261,24 @@ export const waybills = mysqlTable("waybills", {
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Waybill = typeof waybills.$inferSelect;
 export type InsertWaybill = typeof waybills.$inferInsert;
+
+// ─── Recovery audit log ────────────────────────────────────────────────────
+
+export const recoveryAuditLog = mysqlTable("recovery_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: varchar("entityType", { length: 64 }).notNull(),
+  entityId: int("entityId").notNull(),
+  action: mysqlEnum("action", ["delete", "restore"]).notNull(),
+  actor: varchar("actor", { length: 256 }).notNull(),
+  // Snapshot is deliberately kept after a delete to simplify an independent recovery review.
+  snapshot: longtext("snapshot").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("recovery_audit_entity_idx").on(table.entityType, table.entityId)]);
 
 // ─── Waybill sequence counter ────────────────────────────────────────────────
 

@@ -78,6 +78,13 @@
       "when": 1786100400000,
       "tag": "0010_attachment_object_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1786624988242,
+      "tag": "0011_data_resilience",
+      "breakpoints": true
     }
   ]
 }
