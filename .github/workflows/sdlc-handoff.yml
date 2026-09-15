@@ -1,6 +1,7 @@
 name: Передача аналитического пакета разработчику
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
