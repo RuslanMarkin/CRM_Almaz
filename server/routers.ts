@@ -40,6 +40,8 @@ import {
   updateWaybill,
   closeWaybill,
   deleteWaybill,
+  getDeletedRecords,
+  restoreDeletedRecord,
   getDashboardStats,
   getCounterpartyDocuments,
 } from "./db";
@@ -386,7 +388,7 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteCounterparty(input.id)),
+      .mutation(({ input, ctx }) => deleteCounterparty(input.id, ctx.user.name)),
   }),
 
   // ─── Contracts ────────────────────────────────────────────────────────────
@@ -442,7 +444,7 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteContract(input.id)),
+      .mutation(({ input, ctx }) => deleteContract(input.id, ctx.user.name)),
   }),
 
   // ─── Deals ────────────────────────────────────────────────────────────────
@@ -479,7 +481,7 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ input }) => deleteDeal(input.id)),
+      .mutation(({ input, ctx }) => deleteDeal(input.id, ctx.user.name)),
   }),
 
   // ─── Specifications ───────────────────────────────────────────────────────
@@ -527,7 +529,7 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteSpecification(input.id)),
+      .mutation(({ input, ctx }) => deleteSpecification(input.id, ctx.user.name)),
   }),
 
   // ─── Document scan attachments ───────────────────────────────────────────
@@ -559,15 +561,9 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(async ({ input }) => {
-        const attachment = await getDocumentAttachmentById(input.id);
-        const result = await deleteDocumentAttachment(input.id);
-        if (attachment?.storageKey) {
-          await deleteAttachmentObject(attachment.storageKey).catch((error) => {
-            console.error(`Failed to delete attachment object ${attachment.id}:`, error);
-          });
-        }
-        return result;
+      .mutation(async ({ input, ctx }) => {
+        // The object itself stays in versioned S3 storage while the attachment is in the bin.
+        return deleteDocumentAttachment(input.id, ctx.user.name);
       }),
   }),
 
@@ -657,7 +653,14 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteWaybill(input.id)),
+      .mutation(({ input, ctx }) => deleteWaybill(input.id, ctx.user.name)),
+  }),
+
+  recycleBin: router({
+    list: publicProcedure.query(() => getDeletedRecords()),
+    restore: publicProcedure
+      .input(z.object({ entityType: z.enum(["counterparty", "contract", "deal", "specification", "waybill", "attachment"]), id: z.number().int().positive() }))
+      .mutation(({ input, ctx }) => restoreDeletedRecord(input.entityType, input.id, ctx.user.name)),
   }),
 });
 
