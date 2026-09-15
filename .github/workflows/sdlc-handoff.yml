@@ -46,3 +46,4 @@ jobs:
                 title: `[Разработка] ${handoff.featureId}: ${handoff.title}`,
                 body: `${marker}\n\nАвтоматическая передача из аналитического этапа.\n\nHandoff: ${artifactUrl}\n\nСледующий исполнитель: **${handoff.nextExecutor}**.\n\nОбязательные проверки:\n${handoff.requiredChecks.map((check) => `- [ ] ${check}`).join("\\n")}`,
               });
+            }
