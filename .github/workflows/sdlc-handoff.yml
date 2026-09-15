@@ -46,6 +46,6 @@ jobs:
                 owner,
                 repo,
                 title: `[${role}] ${handoff.featureId}: ${handoff.title}`,
-                body: `${marker}\n\nАвтоматическая передача на этап **${handoff.stage}**.\n\nHandoff: ${artifactUrl}\n\nСледующий исполнитель: **${handoff.nextExecutor}**.\n\nОбязательные проверки:\n${handoff.requiredChecks.map((check) => `- [ ] ${check}`).join("\\n")}`,
+                body: `${marker}\n\nАвтоматическая передача на этап **${handoff.stage}**.\n\nHandoff: ${artifactUrl}\n\nСледующий исполнитель: **${handoff.nextExecutor}**.\n\nОбязательные проверки:\n${handoff.requiredChecks.map((check) => `- [ ] ${check}`).join("\n")}`,
               });
             }
