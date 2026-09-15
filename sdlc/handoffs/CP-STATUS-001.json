@@ -1,23 +1,30 @@
 {
   "featureId": "CP-STATUS-001",
   "title": "Статусы контрагентов",
-  "stage": "ready_for_development",
+  "stage": "ready_for_qa",
   "businessIssue": 3,
-  "nextExecutor": "developer",
+  "nextExecutor": "qa",
   "artifacts": [
     "sdlc/artifacts/CP-STATUS-001/business-request.md",
     "sdlc/artifacts/CP-STATUS-001/analysis-spec.md",
     "sdlc/artifacts/CP-STATUS-001/test-plan.md",
+    "sdlc/artifacts/CP-STATUS-001/development-notes.md",
     "sdlc/evals/CP-STATUS-001.jsonl"
   ],
   "requiredChecks": [
     "pnpm check",
     "pnpm test",
+    "pnpm build",
     "проверка миграции на staging",
     "выполнение сценариев CP-01—CP-06"
   ],
   "assumptions": [
     "Статус устанавливается вручную.",
     "ЧС и Должник не блокируют операции в первой итерации."
-  ]
+  ],
+  "implementation": {
+    "branch": "codex/feature-counterparty-statuses",
+    "migration": "drizzle/0012_counterparty-status.sql",
+    "verification": "TypeScript, 32 автотеста и production-сборка выполнены локально."
+  }
 }

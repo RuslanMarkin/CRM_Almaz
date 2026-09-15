@@ -85,6 +85,13 @@
       "when": 1786624988242,
       "tag": "0011_data_resilience",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1789506553914,
+      "tag": "0012_counterparty-status",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_TYPES, formatDate, cn } from "@/lib/utils";
+import { COUNTERPARTY_STATUSES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ interface FormState {
   shortName: string;
   type: CPType;
   businessRole: CounterpartyRole;
+  status: CounterpartyStatus;
   inn: string;
   ogrn: string;
   kpp: string;
@@ -52,6 +54,7 @@ const emptyForm: FormState = {
   shortName: "",
   type: "legal",
   businessRole: "seller",
+  status: "normal",
   inn: "",
   ogrn: "",
   kpp: "",
@@ -128,6 +131,7 @@ export default function Counterparties() {
       shortName: (cp as any).shortName ?? "",
       type: ((cp as any).type ?? "legal") as CPType,
       businessRole: ((cp as any).businessRole ?? "seller") as CounterpartyRole,
+      status: ((cp as any).status ?? "normal") as CounterpartyStatus,
       inn: (cp as any).inn ?? "",
       ogrn: (cp as any).ogrn ?? "",
       kpp: (cp as any).kpp ?? "",
@@ -219,6 +223,7 @@ export default function Counterparties() {
               <tr className="border-b border-border bg-muted/30">
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Наименование</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide hidden md:table-cell">Тип</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide hidden lg:table-cell">Статус</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide hidden lg:table-cell">ИНН</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide hidden xl:table-cell">Телефон</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide hidden xl:table-cell">Добавлен</th>
@@ -247,6 +252,11 @@ export default function Counterparties() {
                     <span className="text-xs text-muted-foreground">
                       {COUNTERPARTY_TYPES[cp.type as keyof typeof COUNTERPARTY_TYPES] ?? cp.type}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    <StatusBadge
+                      {...(COUNTERPARTY_STATUSES[(cp.status ?? "normal") as CounterpartyStatus] ?? COUNTERPARTY_STATUSES.normal)}
+                    />
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     <span className="text-sm font-mono text-foreground">{cp.inn ?? "—"}</span>
@@ -324,6 +334,17 @@ export default function Counterparties() {
                     <SelectItem value="seller">Продавец</SelectItem>
                     <SelectItem value="buyer">Покупатель</SelectItem>
                     <SelectItem value="carrier">Перевозчик</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>Статус контрагента</Label>
+                <Select value={form.status} onValueChange={(v) => setForm((p) => ({ ...p, status: v as CounterpartyStatus }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(COUNTERPARTY_STATUSES).map(([value, status]) => (
+                      <SelectItem key={value} value={value}>{status.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

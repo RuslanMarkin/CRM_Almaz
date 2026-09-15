@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
+import { COUNTERPARTY_STATUS_VALUES } from "@shared/counterpartyStatus";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -34,6 +35,7 @@ export const counterparties = mysqlTable("counterparties", {
   shortName: varchar("shortName", { length: 256 }),
   type: mysqlEnum("type", ["legal", "individual", "sole_trader"]).default("legal").notNull(),
   businessRole: mysqlEnum("businessRole", ["seller", "buyer", "carrier"]),
+  status: mysqlEnum("status", COUNTERPARTY_STATUS_VALUES).default("normal").notNull(),
   region: varchar("region", { length: 256 }),
   profile: text("profile"),
   inn: varchar("inn", { length: 12 }),
