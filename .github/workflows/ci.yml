@@ -1,0 +1,29 @@
+name: Проверки проекта
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Включить pnpm
+        run: corepack enable
+      - name: Установить зависимости
+        run: pnpm install --frozen-lockfile
+      - name: Проверить типы
+        run: pnpm check
+      - name: Запустить тесты
+        run: pnpm test
+      - name: Проверить handoff аналитика
+        run: node sdlc/scripts/validate-handoff.mjs sdlc/handoffs/CP-STATUS-001.json

@@ -1,0 +1,23 @@
+{
+  "featureId": "CP-STATUS-001",
+  "title": "Статусы контрагентов",
+  "stage": "ready_for_development",
+  "businessIssue": 3,
+  "nextExecutor": "developer",
+  "artifacts": [
+    "sdlc/artifacts/CP-STATUS-001/business-request.md",
+    "sdlc/artifacts/CP-STATUS-001/analysis-spec.md",
+    "sdlc/artifacts/CP-STATUS-001/test-plan.md",
+    "sdlc/evals/CP-STATUS-001.jsonl"
+  ],
+  "requiredChecks": [
+    "pnpm check",
+    "pnpm test",
+    "проверка миграции на staging",
+    "выполнение сценариев CP-01—CP-06"
+  ],
+  "assumptions": [
+    "Статус устанавливается вручную.",
+    "ЧС и Должник не блокируют операции в первой итерации."
+  ]
+}
