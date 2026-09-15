@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_TYPES, CONTRACT_STATUSES, SPEC_STATUSES, WAYBILL_STATUSES, formatDate, formatCurrency } from "@/lib/utils";
+import { COUNTERPARTY_STATUSES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Building2, BookOpen, ScrollText, Truck, Copy } from "lucide-react";
@@ -65,6 +66,11 @@ export default function CounterpartyDetail() {
             {COUNTERPARTY_TYPES[cp.type as keyof typeof COUNTERPARTY_TYPES] ?? cp.type}
             {cp.inn && ` · ИНН ${cp.inn}`}
           </p>
+          <div className="mt-2">
+            <StatusBadge
+              {...(COUNTERPARTY_STATUSES[(cp.status ?? "normal") as CounterpartyStatus] ?? COUNTERPARTY_STATUSES.normal)}
+            />
+          </div>
         </div>
       </div>
 

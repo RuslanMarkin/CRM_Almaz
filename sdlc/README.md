@@ -10,7 +10,7 @@
 2. Аналитик готовит пакет в `sdlc/artifacts/<feature-id>/`.
 3. После PR аналитика в `main` workflow создаёт GitHub Issue для разработчика.
 4. Разработчик берёт только этот Issue и handoff, создаёт feature-ветку и PR.
-5. QA сверяет реализацию с `test-plan.md` и `evals/<feature-id>.jsonl`.
+5. После PR разработки workflow создаёт GitHub Issue для QA. QA сверяет реализацию с `test-plan.md` и `evals/<feature-id>.jsonl`.
 6. Только успешный QA-пакет допускает релиз.
 
 ## Структура
