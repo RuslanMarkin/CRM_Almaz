@@ -1,0 +1,6 @@
+{"id":"CP-01","input":{"existingCounterparty":true,"migration":"apply"},"expected_output":{"status":"normal"},"metadata":{"type":"migration","severity":"high"}}
+{"id":"CP-02","input":{"createCounterparty":{"name":"ООО Ромашка"}},"expected_output":{"status":"normal"},"metadata":{"type":"default","severity":"high"}}
+{"id":"CP-03","input":{"updateCounterparty":{"status":"blacklisted"}},"expected_output":{"status":"blacklisted","visibleLabel":"ЧС"},"metadata":{"type":"manual-status","severity":"high"}}
+{"id":"CP-04","input":{"updateCounterparty":{"status":"unknown"}},"expected_output":{"validationError":true},"metadata":{"type":"validation","severity":"high"}}
+{"id":"CP-05","input":{"page":"counterparties","counterpartyStatus":"debtor"},"expected_output":{"visibleLabel":"Должник"},"metadata":{"type":"ui","severity":"medium"}}
+{"id":"CP-06","input":{"createContract":{"counterpartyStatus":"blacklisted"}},"expected_output":{"contractCreationAllowed":true},"metadata":{"type":"regression","severity":"medium"}}
