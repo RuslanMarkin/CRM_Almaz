@@ -1,0 +1,45 @@
+name: Бизнес-задача для SDLC
+description: Создать задачу, которую автоматически обработает SDLC-процесс.
+title: "[Бизнес] "
+labels:
+  - sdlc:start
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Заполните форму. После отправки задачи SDLC-runner подготовит черновик
+        спецификации для human review.
+  - type: input
+    id: business-goal
+    attributes:
+      label: Бизнес-цель
+      description: Какую проблему решает изменение и для кого?
+      placeholder: Например, менеджеру нужно сразу видеть риск по контрагенту.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Ожидаемое поведение
+      description: Опишите сценарий пользователя и ожидаемый результат.
+      placeholder: Пользователь открывает список контрагентов и видит ...
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Ограничения и границы первой итерации
+      description: Что важно не делать, какие правила или зависимости уже известны?
+      placeholder: Не менять ...; использовать ...
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Предварительные критерии приёмки
+      description: Как бизнес поймёт, что задача выполнена?
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: false
