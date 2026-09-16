@@ -54,6 +54,8 @@ jobs:
           --evidence server/routers.ts
           --evidence client/src/pages/Counterparties.tsx
           --evidence client/src/pages/CounterpartyDetail.tsx
+          --evidence shared/counterpartyStatus.test.ts
+          --evidence server/counterpartyStatusMigration.test.ts
 
   resume:
     if: >-
@@ -97,3 +99,5 @@ jobs:
           --evidence server/routers.ts
           --evidence client/src/pages/Counterparties.tsx
           --evidence client/src/pages/CounterpartyDetail.tsx
+          --evidence shared/counterpartyStatus.test.ts
+          --evidence server/counterpartyStatusMigration.test.ts
