@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "featureId": "SDLC-CURSOR-001",
+  "title": "Пилот Cursor SDLC",
+  "stage": "analysis",
+  "nextExecutor": "analyst",
+  "workStatus": "ready_for_review",
+  "revision": 1,
+  "baseBranch": "feature/sdlc-cursor-001",
+  "stageBranch": "stage/sdlc-cursor-001/analysis/r1",
+  "sourceCommit": "8a340cc7a422b408aa5b22ee725c406f2cc36c29",
+  "artifacts": [
+    "sdlc/artifacts/SDLC-CURSOR-001/business-request.md",
+    "sdlc/artifacts/SDLC-CURSOR-001/test-plan.md",
+    "sdlc/artifacts/SDLC-CURSOR-001/analysis-spec.md"
+  ],
+  "requiredChecks": [
+    "pnpm check",
+    "pnpm test"
+  ],
+  "workspaceOwners": {
+    "analyst": "RuslanMarkin",
+    "developer": "RuslanMarkin",
+    "qa": "RuslanMarkin"
+  }
+}
