@@ -1,0 +1,141 @@
+name: Создать Git-native SDLC feature
+
+on:
+  workflow_dispatch:
+    inputs:
+      feature_id:
+        description: Идентификатор в формате CP-STATUS-001
+        required: true
+        type: string
+      title:
+        description: Краткое название функции
+        required: true
+        type: string
+      description:
+        description: Бизнесовый запрос для аналитического этапа
+        required: true
+        type: string
+      analyst_login:
+        description: GitHub login аналитического workspace-agent (необязательно)
+        required: false
+        type: string
+      developer_login:
+        description: GitHub login разработческого workspace-agent (необязательно)
+        required: false
+        type: string
+      qa_login:
+        description: GitHub login QA workspace-agent (необязательно)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  create-feature-and-analysis-stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/github-script@v7
+        env:
+          FEATURE_ID: ${{ inputs.feature_id }}
+          FEATURE_TITLE: ${{ inputs.title }}
+          FEATURE_DESCRIPTION: ${{ inputs.description }}
+          ANALYST_LOGIN: ${{ inputs.analyst_login }}
+          DEVELOPER_LOGIN: ${{ inputs.developer_login }}
+          QA_LOGIN: ${{ inputs.qa_login }}
+        with:
+          script: |
+            const contract = await import(`${process.env.GITHUB_WORKSPACE}/sdlc/scripts/stage-contract.mjs`);
+            const { owner, repo } = context.repo;
+            const featureId = process.env.FEATURE_ID.trim();
+            const title = process.env.FEATURE_TITLE.trim();
+            const description = process.env.FEATURE_DESCRIPTION.trim();
+            const baseBranch = contract.featureBranch(featureId);
+            const analysisBranch = contract.stageBranch(featureId, "analysis", 1);
+            const root = contract.artifactRoot(featureId);
+            const handoffPath = `sdlc/handoffs/${featureId}.json`;
+            const workspaceOwners = {
+              analyst: process.env.ANALYST_LOGIN.trim(),
+              developer: process.env.DEVELOPER_LOGIN.trim(),
+              qa: process.env.QA_LOGIN.trim(),
+            };
+
+            async function refExists(branch) {
+              try {
+                await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+                return true;
+              } catch (error) {
+                if (error.status === 404) return false;
+                throw error;
+              }
+            }
+
+            if (await refExists(baseBranch) || await refExists(analysisBranch)) {
+              core.setFailed(`Feature ${featureId} уже существует: ${baseBranch} или ${analysisBranch}.`);
+              return;
+            }
+
+            const main = await github.rest.git.getRef({ owner, repo, ref: "heads/main" });
+            await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: main.data.object.sha });
+            await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${analysisBranch}`, sha: main.data.object.sha });
+
+            const handoff = contract.createStageHandoff({
+              featureId,
+              title,
+              stage: "analysis",
+              sourceCommit: main.data.object.sha,
+              artifacts: [
+                `${root}/business-request.md`,
+                `${root}/test-plan.md`,
+              ],
+            });
+            handoff.workspaceOwners = workspaceOwners;
+            const files = {
+              [`${root}/business-request.md`]: `# ${featureId}: ${title}\n\n${description}\n`,
+              [`${root}/analysis-spec.md`]: "# Черновик аналитической спецификации\n\n_Заполняется агентом-аналитиком._\n",
+              [`${root}/test-plan.md`]: "# Черновик тест-плана\n\n_Заполняется агентом-аналитиком._\n",
+              [`${root}/TASK.md`]: contract.renderStageTask(handoff),
+              [handoffPath]: `${JSON.stringify(handoff, null, 2)}\n`,
+            };
+            for (const [path, content] of Object.entries(files)) {
+              await github.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                branch: analysisBranch,
+                path,
+                message: `sdlc(${featureId.toLowerCase()}): start analysis`,
+                content: Buffer.from(content).toString("base64"),
+              });
+            }
+
+            const pull = await github.rest.pulls.create({
+              owner,
+              repo,
+              head: analysisBranch,
+              base: baseBranch,
+              title: `[Аналитика] ${featureId}: ${title}`,
+              body: `<!-- sdlc-stage:${featureId}:analysis:1 -->\n\nАвтоматически созданный аналитический этап. Его можно merge только после успешной проверки stage-пакета и GitHub approval.`,
+            });
+            const workspaceTask = {
+              featureId,
+              role: "analyst",
+              stage: "analysis",
+              revision: 1,
+              branch: analysisBranch,
+              pullRequest: pull.data.html_url,
+              handoffPath,
+            };
+            const marker = `<!-- sdlc-workspace:${featureId}:analysis:1 -->`;
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title: `[Workspace] Аналитика ${featureId}`,
+              body: `${marker}\n<!-- sdlc-workspace-task:${Buffer.from(JSON.stringify(workspaceTask)).toString("base64url")} -->\n\nПодготовлена ветка \`${analysisBranch}\`. Workspace-agent создаст worktree и при настройке запустит Cursor Agent.\n\nPR: ${pull.data.html_url}`,
+              assignees: workspaceOwners.analyst ? [workspaceOwners.analyst] : [],
+            });
+            core.notice(`Созданы ${baseBranch}, ${analysisBranch} и ${pull.data.html_url}.`);
