@@ -4,7 +4,7 @@
   "title": "Пилот Cursor SDLC",
   "stage": "analysis",
   "nextExecutor": "analyst",
-  "workStatus": "in_progress",
+  "workStatus": "ready_for_review",
   "revision": 1,
   "baseBranch": "feature/sdlc-cursor-001",
   "stageBranch": "stage/sdlc-cursor-001/analysis/r1",
