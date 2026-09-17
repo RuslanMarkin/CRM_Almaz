@@ -10,6 +10,8 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:sdlc": "node --test sdlc/scripts/*.test.mjs",
+    "sdlc:validate": "node sdlc/scripts/validate-handoff.mjs sdlc/handoffs/CP-STATUS-001.json",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {

@@ -1,0 +1,164 @@
+name: Передать SDLC stage после merge
+
+on:
+  pull_request:
+    branches:
+      - "feature/**"
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  create-next-stage:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'stage/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const contract = await import(`${process.env.GITHUB_WORKSPACE}/sdlc/scripts/stage-contract.mjs`);
+            const { owner, repo } = context.repo;
+            const pullRequest = context.payload.pull_request;
+            const sourceBranch = pullRequest.head.ref;
+            const targetBranch = pullRequest.base.ref;
+            const parsed = contract.parseStageBranch(sourceBranch);
+            if (!parsed) return;
+
+            const targetRef = await github.rest.git.getRef({ owner, repo, ref: `heads/${targetBranch}` });
+            // Feature IDs can include words and are stored with their canonical casing.
+            const handoffFiles = await github.rest.git.getTree({
+              owner,
+              repo,
+              tree_sha: targetRef.data.object.sha,
+              recursive: "true",
+            });
+            const handoffEntry = handoffFiles.data.tree.find((entry) =>
+              entry.type === "blob" && entry.path?.startsWith("sdlc/handoffs/") && entry.path?.endsWith(".json"),
+            );
+            if (!handoffEntry) throw new Error(`В ${targetBranch} не найден SDLC handoff.`);
+
+            const candidates = handoffFiles.data.tree.filter((entry) =>
+              entry.type === "blob" && entry.path?.startsWith("sdlc/handoffs/") && entry.path?.endsWith(".json"),
+            );
+            let handoff = null;
+            let resolvedHandoffPath = null;
+            for (const candidate of candidates) {
+              const file = await github.rest.repos.getContent({ owner, repo, path: candidate.path, ref: targetBranch });
+              const value = JSON.parse(Buffer.from(file.data.content, "base64").toString("utf8"));
+              if (value.schemaVersion === 2 && value.stageBranch === sourceBranch) {
+                handoff = value;
+                resolvedHandoffPath = candidate.path;
+                break;
+              }
+            }
+            if (!handoff || !resolvedHandoffPath) throw new Error(`Не найден handoff для ${sourceBranch}.`);
+            if (handoff.baseBranch !== targetBranch) throw new Error("Stage PR влит не в свою feature-ветку.");
+            if (handoff.workStatus !== "ready_for_review") throw new Error("Влит этап, который не был готов к review.");
+            const errors = contract.validateHandoff(handoff);
+            if (errors.length) throw new Error(errors.join("\n"));
+
+            const stage = contract.STAGES[handoff.stage];
+            const issueMarker = `<!-- sdlc-workspace:${handoff.featureId}:${handoff.stage}:${handoff.revision} -->`;
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+            });
+            for (const issue of openIssues.filter((item) => item.body?.includes(issueMarker))) {
+              await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: "closed" });
+            }
+
+            if (!stage.next) {
+              const finalPulls = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: "open",
+                head: `${owner}:${targetBranch}`,
+                base: "main",
+              });
+              if (!finalPulls.length) {
+                await github.rest.pulls.create({
+                  owner,
+                  repo,
+                  head: targetBranch,
+                  base: "main",
+                  title: `[Feature ready] ${handoff.featureId}: ${handoff.title}`,
+                  body: `<!-- sdlc-feature-ready:${handoff.featureId} -->\n\nQA-пакет утверждён. Финальный merge в \`main\` допускается правилами защиты ветки.`,
+                });
+              }
+            } else {
+              const nextStage = stage.next;
+              const nextRevision = 1;
+              const nextBranch = contract.stageBranch(handoff.featureId, nextStage, nextRevision);
+              const nextHandoff = contract.createStageHandoff({
+                featureId: handoff.featureId,
+                title: handoff.title,
+                stage: nextStage,
+                revision: nextRevision,
+                sourceCommit: targetRef.data.object.sha,
+                artifacts: handoff.artifacts,
+                requiredChecks: handoff.requiredChecks,
+              });
+              nextHandoff.workspaceOwners = handoff.workspaceOwners ?? {};
+              const outputPath = contract.stageOutputPath(handoff.featureId, nextStage);
+              const taskPath = `${contract.artifactRoot(handoff.featureId)}/TASK.md`;
+              const placeholder = `# ${handoff.featureId}: ${nextStage}\n\n_Заполняется агентом этапа ${nextStage}._\n`;
+              await github.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/heads/${nextBranch}`,
+                sha: targetRef.data.object.sha,
+              });
+              for (const [path, content] of Object.entries({
+                [outputPath]: placeholder,
+                [taskPath]: contract.renderStageTask(nextHandoff),
+                [resolvedHandoffPath]: `${JSON.stringify(nextHandoff, null, 2)}\n`,
+              })) {
+                await github.rest.repos.createOrUpdateFileContents({
+                  owner,
+                  repo,
+                  branch: nextBranch,
+                  path,
+                  message: `sdlc(${handoff.featureId.toLowerCase()}): start ${nextStage}`,
+                  content: Buffer.from(content).toString("base64"),
+                });
+              }
+              const nextPull = await github.rest.pulls.create({
+                owner,
+                repo,
+                head: nextBranch,
+                base: targetBranch,
+                title: `[${contract.STAGES[nextStage].executor}] ${handoff.featureId}: ${nextStage}`,
+                body: `<!-- sdlc-stage:${handoff.featureId}:${nextStage}:${nextRevision} -->\n\nСоздано после merge этапа ${handoff.stage}.`,
+              });
+              const workspaceTask = {
+                featureId: handoff.featureId,
+                role: contract.STAGES[nextStage].executor,
+                stage: nextStage,
+                revision: nextRevision,
+                branch: nextBranch,
+                pullRequest: nextPull.data.html_url,
+                handoffPath: resolvedHandoffPath,
+              };
+              const assignee = nextHandoff.workspaceOwners[workspaceTask.role] || "";
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title: `[Workspace] ${workspaceTask.role} ${handoff.featureId}: ${nextStage}`,
+                body: `<!-- sdlc-workspace:${handoff.featureId}:${nextStage}:${nextRevision} -->\n<!-- sdlc-workspace-task:${Buffer.from(JSON.stringify(workspaceTask)).toString("base64url")} -->\n\nПодготовлена ветка \`${nextBranch}\`.\n\nPR: ${nextPull.data.html_url}`,
+                assignees: assignee ? [assignee] : [],
+              });
+            }
+
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `heads/${sourceBranch}` });
+            } catch (error) {
+              if (error.status !== 422 && error.status !== 404) throw error;
+            }

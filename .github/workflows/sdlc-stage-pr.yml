@@ -1,0 +1,21 @@
+name: Проверить SDLC stage PR
+
+on:
+  pull_request:
+    branches:
+      - "feature/**"
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-stage-package:
+    if: startsWith(github.head_ref, 'stage/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Проверить handoff и обязательные артефакты этапа
+        run: node sdlc/scripts/validate-stage-pr.mjs --head "$GITHUB_HEAD_REF" --base "$GITHUB_BASE_REF"

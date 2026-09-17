@@ -24,5 +24,7 @@ jobs:
         run: pnpm check
       - name: Запустить тесты
         run: pnpm test
+      - name: Проверить Git-native SDLC-контракт
+        run: pnpm test:sdlc
       - name: Проверить handoff аналитика
-        run: node sdlc/scripts/validate-handoff.mjs sdlc/handoffs/CP-STATUS-001.json
+        run: pnpm sdlc:validate
