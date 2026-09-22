@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ScanAttachments } from "@/components/ScanAttachments";
 import { trpc } from "@/lib/trpc";
+import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { toast } from "sonner";
 import Waybills from "./Waybills";
 
@@ -26,6 +27,7 @@ type CounterpartyFormState = {
   shortName: string;
   type: "legal" | "individual" | "sole_trader";
   businessRole: CounterpartyRole;
+  status: CounterpartyStatus;
   region: string;
   profile: string;
   inn: string;
@@ -35,6 +37,7 @@ type CounterpartyFormState = {
   legalAddress: string;
   postalAddress: string;
   actualAddress: string;
+  loadingAddress: string;
   representativeName: string;
   representativePosition: string;
   authorityBasis: string;
@@ -96,6 +99,7 @@ const emptyCounterpartyForm: CounterpartyFormState = {
   shortName: "",
   type: "legal",
   businessRole: "seller",
+  status: "normal",
   region: "",
   profile: "",
   inn: "",
@@ -105,6 +109,7 @@ const emptyCounterpartyForm: CounterpartyFormState = {
   legalAddress: "",
   postalAddress: "",
   actualAddress: "",
+  loadingAddress: "",
   representativeName: "",
   representativePosition: "",
   authorityBasis: "Устав",
@@ -155,10 +160,12 @@ const emptyDealForm: DealFormState = {
 };
 
 function toCounterpartyForm(counterparty: Partial<Record<keyof CounterpartyFormState, string | null>>): CounterpartyFormState {
-  return {
+  const form = {
     ...emptyCounterpartyForm,
     ...Object.fromEntries(Object.entries(counterparty).map(([key, value]) => [key, value ?? ""])),
   } as CounterpartyFormState;
+  if (!COUNTERPARTY_STATUS_VALUES.includes(form.status)) form.status = "normal";
+  return form;
 }
 
 function toOrganizationForm(profile: Partial<Record<keyof OrganizationFormState, string | null>>): OrganizationFormState {
@@ -676,15 +683,16 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               </div>
               <Panel flush>
                 <table className="agro-table">
-                  <thead><tr><th>Контрагент</th><th>Тип</th><th>Регион</th><th>Профиль</th><th>Договоров</th><th>Статус</th></tr></thead>
+                  <thead><tr><th>Контрагент</th><th>Тип</th><th>Регион</th><th>Профиль</th><th>Статус</th></tr></thead>
                   <tbody>
-                    {counterpartiesLoading && <tr><td colSpan={6} className="agro-empty-row">Загрузка контрагентов...</td></tr>}
+                    {counterpartiesLoading && <tr><td colSpan={5} className="agro-empty-row">Загрузка контрагентов...</td></tr>}
                     {!counterpartiesLoading && !filteredCounterparties.length && (
-                      <tr><td colSpan={6} className="agro-empty-row">В этом разделе пока нет контрагентов. Создайте первую карточку.</td></tr>
+                      <tr><td colSpan={5} className="agro-empty-row">В этом разделе пока нет контрагентов. Создайте первую карточку.</td></tr>
                     )}
                     {filteredCounterparties.map((counterparty) => {
-                      const contractsCount = contracts.filter((item) => item.contract.counterpartyId === counterparty.id).length;
                       const isComplete = Boolean(counterparty.inn && counterparty.bankAccount && counterparty.representativeName);
+                      const statusKey = (counterparty.status ?? "normal") as CounterpartyStatus;
+                      const statusMeta = COUNTERPARTY_STATUSES[statusKey] ?? COUNTERPARTY_STATUSES.normal;
                       return (
                         <tr key={counterparty.id} className="agro-clickable-row" onClick={() => setSelectedCounterpartyId(counterparty.id)}>
                           <td>
@@ -694,8 +702,10 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                           <td><span className="agro-tag">{roleLabels[counterparty.businessRole as CounterpartyRole] ?? "Роль не назначена"}</span></td>
                           <td>{counterparty.region || "—"}</td>
                           <td>{counterparty.profile || "—"}</td>
-                          <td>{contractsCount}</td>
-                          <td><span className={isComplete ? "agro-status-ok" : "agro-status-attention"}>{isComplete ? "В норме" : "Нужны реквизиты"}</span></td>
+                          <td>
+                            <span className={`agro-status-badge ${statusKey}`}>{statusMeta.label}</span>
+                            {!isComplete && <div className="agro-table-secondary agro-status-attention">Нужны реквизиты</div>}
+                          </td>
                         </tr>
                       );
                     })}
@@ -803,18 +813,11 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                 <DetailItem label="ОГРН" value={selectedCounterparty.ogrn} />
               </div>
               <div className="agro-detail-group">
-                <h3>Представитель</h3>
-                <DetailItem label="ФИО" value={selectedCounterparty.representativeName} />
-                <DetailItem label="Должность" value={selectedCounterparty.representativePosition} />
-                <DetailItem label="Основание полномочий" value={selectedCounterparty.authorityBasis} />
-                <DetailItem label="Телефон" value={selectedCounterparty.phone} />
-                <DetailItem label="Email" value={selectedCounterparty.email} />
-              </div>
-              <div className="agro-detail-group">
                 <h3>Адреса и банк</h3>
                 <DetailItem label="Юридический адрес" value={selectedCounterparty.legalAddress} />
                 <DetailItem label="Почтовый адрес" value={selectedCounterparty.postalAddress} />
                 <DetailItem label="Фактический адрес" value={selectedCounterparty.actualAddress} />
+                <DetailItem label="Пункт погрузки" value={selectedCounterparty.loadingAddress} />
                 <DetailItem label="Банк" value={selectedCounterparty.bankName} />
                 <DetailItem label="БИК" value={selectedCounterparty.bankBik} />
                 <DetailItem label="Расчётный счёт" value={selectedCounterparty.bankAccount} />
@@ -1095,6 +1098,7 @@ function CounterpartyFormModal({
             <label className="agro-field"><span>Краткое наименование</span><input value={form.shortName} onChange={(event) => setField("shortName", event.target.value)} /></label>
             <label className="agro-field"><span>Организационная форма</span><select value={form.type} onChange={(event) => setField("type", event.target.value)}><option value="legal">ООО / АО / ПАО</option><option value="sole_trader">ИП</option><option value="individual">Физическое лицо</option></select></label>
             <label className="agro-field"><span>Роль в цепочке</span><select value={form.businessRole} onChange={(event) => setField("businessRole", event.target.value)}>{Object.entries(roleLabels).map(([role, label]) => <option value={role} key={role}>{label}</option>)}</select></label>
+            <label className="agro-field"><span>Статус</span><select value={form.status} onChange={(event) => setField("status", event.target.value)}>{Object.entries(COUNTERPARTY_STATUSES).map(([value, status]) => <option key={value} value={value}>{status.label}</option>)}</select></label>
             <label className="agro-field"><span>Регион</span><input value={form.region} onChange={(event) => setField("region", event.target.value)} placeholder="Ставропольский край" /></label>
             <label className="agro-field agro-field-wide"><span>Профиль продукции / услуг</span><input value={form.profile} onChange={(event) => setField("profile", event.target.value)} placeholder="Пшеница, ячмень или автоперевозки" /></label>
           </div>
@@ -1127,6 +1131,7 @@ function CounterpartyFormModal({
             <label className="agro-field agro-field-wide"><span>Юридический адрес</span><input value={form.legalAddress} onChange={(event) => setField("legalAddress", event.target.value)} /></label>
             <label className="agro-field agro-field-wide"><span>Почтовый адрес</span><input value={form.postalAddress} onChange={(event) => setField("postalAddress", event.target.value)} /></label>
             <label className="agro-field agro-field-wide"><span>Фактический адрес</span><input value={form.actualAddress} onChange={(event) => setField("actualAddress", event.target.value)} /></label>
+            <label className="agro-field agro-field-wide"><span>Пункт погрузки</span><input value={form.loadingAddress} onChange={(event) => setField("loadingAddress", event.target.value)} placeholder="Элеватор, склад, адрес отгрузки" /></label>
           </div>
         </div>
 
@@ -1401,6 +1406,11 @@ const agroStyles = `
 .agro-empty-row{text-align:center; color:var(--soil-soft); padding:28px !important;}
 .agro-status-ok{color:var(--leaf); font-weight:600;}
 .agro-status-attention{color:var(--rust); font-weight:600;}
+.agro-status-badge{display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600;}
+.agro-status-badge.normal{background:#EAF1E5; color:var(--leaf);}
+.agro-status-badge.missing_scans{background:#FDF3D7; color:#A86B00;}
+.agro-status-badge.blacklisted{background:#FBE4E0; color:var(--rust);}
+.agro-status-badge.debtor{background:#FDEBD7; color:#B4560A;}
 .agro-tag{display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600; background:#EAF1E5; color:var(--leaf);}
 .agro-muted{color:var(--soil-soft); font-size:13px; padding:4px 0;}
 .agro-reference-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px;}

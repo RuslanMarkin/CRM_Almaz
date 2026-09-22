@@ -45,6 +45,7 @@ export const counterparties = mysqlTable("counterparties", {
   legalAddress: text("legalAddress"),
   postalAddress: text("postalAddress"),
   actualAddress: text("actualAddress"),
+  loadingAddress: text("loadingAddress"),
   representativeName: varchar("representativeName", { length: 256 }),
   representativePosition: varchar("representativePosition", { length: 128 }),
   authorityBasis: varchar("authorityBasis", { length: 512 }),
