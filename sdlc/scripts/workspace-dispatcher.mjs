@@ -111,6 +111,14 @@ async function processTasks() {
 }
 
 do {
-  await processTasks();
+  try {
+    await processTasks();
+  } catch (error) {
+    console.error(`Ошибка опроса GitHub: ${error.message}`);
+    if (once) {
+      process.exitCode = 1;
+      break;
+    }
+  }
   if (!once) await sleep(pollSeconds * 1_000);
 } while (!once);

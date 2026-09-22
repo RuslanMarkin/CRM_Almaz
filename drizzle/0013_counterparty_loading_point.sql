@@ -1,0 +1,1 @@
+ALTER TABLE `counterparties` ADD `loadingAddress` text;

@@ -935,9 +935,6 @@ export default function Waybills() {
                 <div><Label>Марка автомобиля</Label><Input value={form.vehicleMake} onChange={field("vehicleMake")} className="mt-1" /></div>
                 <div><Label>Госномер тягача</Label><Input value={form.tractorNumber} onChange={field("tractorNumber")} className="mt-1 font-mono uppercase" /></div>
                 <div><Label>Госномер прицепа</Label><Input value={form.trailerNumber} onChange={field("trailerNumber")} className="mt-1 font-mono uppercase" /></div>
-                <div><Label>Гаражный номер</Label><Input value={form.garageNumber} onChange={field("garageNumber")} className="mt-1" /></div>
-                <div><Label>Путевой лист №</Label><Input value={form.tripSheetNumber} onChange={field("tripSheetNumber")} className="mt-1" /></div>
-                <div><Label>Маршрут №</Label><Input value={form.routeNumber} onChange={field("routeNumber")} className="mt-1" /></div>
                 <div className="col-span-2"><Label>Пункт погрузки</Label><Input value={form.loadingAddress} onChange={field("loadingAddress")} className="mt-1" /></div>
                 <div className="col-span-2"><Label>Пункт разгрузки</Label><Input value={form.unloadingAddress} onChange={field("unloadingAddress")} className="mt-1" /></div>
               </div>
@@ -947,16 +944,9 @@ export default function Waybills() {
               <div className="flex items-center gap-2 mb-3"><Package className="text-amber-600" /><h2 className="text-sm font-semibold">Груз и весовые характеристики</h2></div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="col-span-2"><Label>Наименование культуры *</Label><Input value={form.cargoName} onChange={field("cargoName")} className="mt-1" /></div>
-                <div><Label>Сорт, класс</Label><Input value={form.cargoGrade} onChange={field("cargoGrade")} className="mt-1" /></div>
-                <div><Label>Класс груза</Label><Input value={form.cargoClass} onChange={field("cargoClass")} className="mt-1" /></div>
-                <div><Label>Засорённость, %</Label><Input value={form.impurityPercent} onChange={field("impurityPercent")} type="number" step="0.01" className="mt-1" /></div>
-                <div><Label>Влажность, %</Label><Input value={form.moisturePercent} onChange={field("moisturePercent")} type="number" step="0.01" className="mt-1" /></div>
-                <div><Label>Вид упаковки</Label><Input value={form.packageType} onChange={field("packageType")} className="mt-1" /></div>
-                <div><Label>Количество</Label><Input value={form.quantity} onChange={field("quantity")} type="number" step="0.001" className="mt-1" /></div>
                 <div><Label>Брутто, т</Label><Input value={form.grossWeight} onChange={(event) => handleWeightChange("grossWeight", event.target.value)} type="number" step="0.001" className="mt-1 font-mono" /></div>
                 <div><Label>Тара, т</Label><Input value={form.tareWeight} onChange={(event) => handleWeightChange("tareWeight", event.target.value)} type="number" step="0.001" className="mt-1 font-mono" /></div>
                 <div><Label>Нетто, т</Label><Input value={form.netWeight} onChange={field("netWeight")} type="number" step="0.001" className="mt-1 font-mono bg-muted/50" /></div>
-                <div><Label>Цена за тонну, руб.</Label><Input value={form.pricePerUnit} onChange={field("pricePerUnit")} type="number" step="0.01" className="mt-1" /></div>
               </div>
             </section>
 
@@ -1001,7 +991,7 @@ export default function Waybills() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div><Label>Плановый вес</Label><div className="mt-1 flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium">{formatWeight(closingWaybill?.quantity)}</div></div>
+              <div><Label>Нетто, т</Label><div className="mt-1 flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium">{formatWeight(closingWaybill?.netWeight ?? closingWaybill?.quantity)}</div></div>
               <div><Label>Дата закрытия</Label><Input type="date" value={closureForm.closedAt} onChange={(event) => setClosureForm((previous) => ({ ...previous, closedAt: event.target.value }))} className="mt-1" /></div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -122,7 +122,12 @@ export function startCursorAgent({
   );
   const log = openSync(logPath, "a");
   const args = ["-p", prompt, "--output-format", "stream-json"];
-  if (unattended) args.push("--force");
+  if (unattended) {
+    // An unattended worktree has no terminal in which to answer Cursor's
+    // initial workspace-trust question. Limit the more permissive mode to the
+    // explicit flag and keep the agent inside Cursor's sandbox.
+    args.push("--trust", "--force", "--sandbox", "enabled");
+  }
   const version = spawnSync(agentCommand, ["--version"], { encoding: "utf8" });
   if (version.status !== 0) {
     closeSync(log);

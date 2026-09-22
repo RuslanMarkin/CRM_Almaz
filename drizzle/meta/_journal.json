@@ -92,6 +92,13 @@
       "when": 1789506553914,
       "tag": "0012_counterparty-status",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1790074595037,
+      "tag": "0013_counterparty_loading_point",
+      "breakpoints": true
     }
   ]
 }

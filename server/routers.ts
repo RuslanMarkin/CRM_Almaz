@@ -88,6 +88,7 @@ const counterpartyInput = z.object({
   legalAddress: z.string().optional(),
   postalAddress: z.string().optional(),
   actualAddress: z.string().optional(),
+  loadingAddress: z.string().optional(),
   representativeName: z.string().optional(),
   representativePosition: z.string().optional(),
   authorityBasis: z.string().optional(),
@@ -300,7 +301,7 @@ function collectWaybillFormationErrors(waybill: WaybillRecord) {
   if (!hasText(waybill.loadingAddress)) errors.push("укажите адрес погрузки");
   if (!hasText(waybill.unloadingAddress)) errors.push("укажите адрес разгрузки");
   if (!hasText(waybill.cargoName)) errors.push("укажите наименование груза");
-  if (!hasPositiveNumber(waybill.quantity)) errors.push("укажите плановый вес");
+  if (!hasPositiveNumber(waybill.quantity) && !hasPositiveNumber(waybill.netWeight)) errors.push("укажите вес груза (нетто)");
   if (!hasText(waybill.driverName)) errors.push("укажите водителя");
   if (!hasText(waybill.tractorNumber)) errors.push("укажите номер тягача");
 
