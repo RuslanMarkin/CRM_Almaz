@@ -11,6 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
 import { COUNTERPARTY_STATUS_VALUES } from "@shared/counterpartyStatus";
+import { COUNTERPARTY_VAT_VALUES } from "@shared/counterpartyVat";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -35,6 +36,7 @@ export const counterparties = mysqlTable("counterparties", {
   shortName: varchar("shortName", { length: 256 }),
   type: mysqlEnum("type", ["legal", "individual", "sole_trader"]).default("legal").notNull(),
   businessRole: mysqlEnum("businessRole", ["seller", "buyer", "carrier"]),
+  vatType: mysqlEnum("vatType", COUNTERPARTY_VAT_VALUES).default("with_vat").notNull(),
   status: mysqlEnum("status", COUNTERPARTY_STATUS_VALUES).default("normal").notNull(),
   region: varchar("region", { length: 256 }),
   profile: text("profile"),

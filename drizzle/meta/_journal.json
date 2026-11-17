@@ -99,6 +99,13 @@
       "when": 1790074595037,
       "tag": "0013_counterparty_loading_point",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1794921000000,
+      "tag": "0014_counterparty_vat_type",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { counterpartyStatusInputSchema } from "@shared/counterpartyStatus";
+import { counterpartyVatInputSchema } from "@shared/counterpartyVat";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { anonymousProcedure, publicProcedure, router } from "./_core/trpc";
@@ -78,6 +79,7 @@ const counterpartyInput = z.object({
   shortName: z.string().optional(),
   type: z.enum(["legal", "individual", "sole_trader"]).default("legal"),
   businessRole: z.enum(["seller", "buyer", "carrier"]),
+  vatType: counterpartyVatInputSchema,
   status: counterpartyStatusInputSchema,
   region: z.string().optional(),
   profile: z.string().optional(),

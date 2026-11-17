@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_TYPES, formatDate, cn } from "@/lib/utils";
 import { COUNTERPARTY_STATUSES, type CounterpartyStatus } from "@shared/counterpartyStatus";
+import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ interface FormState {
   shortName: string;
   type: CPType;
   businessRole: CounterpartyRole;
+  vatType: CounterpartyVatType;
   status: CounterpartyStatus;
   inn: string;
   ogrn: string;
@@ -54,6 +56,7 @@ const emptyForm: FormState = {
   shortName: "",
   type: "legal",
   businessRole: "seller",
+  vatType: "with_vat",
   status: "normal",
   inn: "",
   ogrn: "",
@@ -131,6 +134,7 @@ export default function Counterparties() {
       shortName: (cp as any).shortName ?? "",
       type: ((cp as any).type ?? "legal") as CPType,
       businessRole: ((cp as any).businessRole ?? "seller") as CounterpartyRole,
+      vatType: (((cp as any).vatType === "without_vat" ? "without_vat" : "with_vat")) as CounterpartyVatType,
       status: ((cp as any).status ?? "normal") as CounterpartyStatus,
       inn: (cp as any).inn ?? "",
       ogrn: (cp as any).ogrn ?? "",
@@ -252,6 +256,15 @@ export default function Counterparties() {
                     <span className="text-xs text-muted-foreground">
                       {COUNTERPARTY_TYPES[cp.type as keyof typeof COUNTERPARTY_TYPES] ?? cp.type}
                     </span>
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ml-2 ${
+                        cp.vatType === "without_vat"
+                          ? "bg-amber-100 text-amber-800 border-amber-200"
+                          : "bg-blue-100 text-blue-800 border-blue-200"
+                      }`}
+                    >
+                      {cp.vatType === "without_vat" ? "Без НДС" : "С НДС"}
+                    </span>
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     <StatusBadge
@@ -334,6 +347,16 @@ export default function Counterparties() {
                     <SelectItem value="seller">Продавец</SelectItem>
                     <SelectItem value="buyer">Покупатель</SelectItem>
                     <SelectItem value="carrier">Перевозчик</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Система налогообложения (НДС)</Label>
+                <Select value={form.vatType} onValueChange={(v) => setForm((p) => ({ ...p, vatType: v as CounterpartyVatType }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="with_vat">С НДС (ОСНО)</SelectItem>
+                    <SelectItem value="without_vat">Без НДС (УСН)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
