@@ -25,6 +25,7 @@ import { Building2, Plus, Search, ChevronRight, Phone, Mail, MapPin, Pencil, Tra
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link, useSearch } from "wouter";
+import { useBankLookup } from "@/hooks/useBankLookup";
 
 type CPType = "legal" | "individual" | "sole_trader";
 type CounterpartyRole = "seller" | "buyer" | "carrier";
@@ -84,6 +85,40 @@ export default function Counterparties() {
   const [hasAutoOpenedCreate, setHasAutoOpenedCreate] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const utils = trpc.useUtils();
+  const { lookup: lookupBank, loading: bankLoading, bankInfo, error: bankError, reset: resetBank } = useBankLookup();
+
+  const handleBikChange = async (bikValue: string) => {
+    setForm((prev) => ({ ...prev, bankBik: bikValue }));
+    const clean = bikValue.replace(/\D/g, "");
+    if (clean.length === 9) {
+      const bank = await lookupBank(clean);
+      if (bank) {
+        setForm((prev) => ({
+          ...prev,
+          bankBik: clean,
+          bankName: bank.bankName,
+          corrAccount: bank.corrAccount || prev.corrAccount,
+        }));
+      }
+    } else if (bankInfo || bankError) {
+      resetBank();
+    }
+  };
+
+  const handleManualBikLookup = async () => {
+    const clean = form.bankBik.replace(/\D/g, "");
+    if (clean.length === 9) {
+      const bank = await lookupBank(clean);
+      if (bank) {
+        setForm((prev) => ({
+          ...prev,
+          bankBik: clean,
+          bankName: bank.bankName,
+          corrAccount: bank.corrAccount || prev.corrAccount,
+        }));
+      }
+    }
+  };
 
   const { data: list, isLoading } = trpc.counterparties.list.useQuery(
     { search: search || undefined },
@@ -121,6 +156,7 @@ export default function Counterparties() {
   });
 
   function openCreate() {
+    resetBank();
     setEditId(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -128,6 +164,7 @@ export default function Counterparties() {
 
   function openEdit(cp: typeof list extends (infer T)[] | undefined ? T : never) {
     if (!cp) return;
+    resetBank();
     setEditId((cp as any).id);
     setForm({
       name: (cp as any).name ?? "",
@@ -413,24 +450,65 @@ export default function Counterparties() {
 
             {/* Bank */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Банковские реквизиты</p>
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Банковские реквизиты</p>
+                {form.bankBik && form.bankBik.replace(/\D/g, "").length === 9 && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline font-medium"
+                    onClick={handleManualBikLookup}
+                    disabled={bankLoading}
+                  >
+                    {bankLoading ? "Поиск..." : "Найти по БИК (DaData)"}
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <Label>Наименование банка</Label>
-                  <Input value={form.bankName} onChange={f("bankName")} placeholder="ПАО Сбербанк" className="mt-1" />
-                </div>
                 <div>
                   <Label>БИК</Label>
-                  <Input value={form.bankBik} onChange={f("bankBik")} placeholder="044525225" className="mt-1 font-mono" maxLength={9} />
+                  <Input
+                    value={form.bankBik}
+                    onChange={(e) => handleBikChange(e.target.value)}
+                    placeholder="044525225"
+                    className="mt-1 font-mono"
+                    maxLength={9}
+                  />
                 </div>
                 <div>
                   <Label>Расчётный счёт</Label>
                   <Input value={form.bankAccount} onChange={f("bankAccount")} placeholder="40702810000000000000" className="mt-1 font-mono" maxLength={20} />
                 </div>
-                <div>
+                <div className="col-span-2">
+                  <Label>Наименование банка</Label>
+                  <Input value={form.bankName} onChange={f("bankName")} placeholder="ПАО Сбербанк" className="mt-1" />
+                </div>
+                <div className="col-span-2">
                   <Label>Корр. счёт</Label>
                   <Input value={form.corrAccount} onChange={f("corrAccount")} placeholder="30101810400000000225" className="mt-1 font-mono" maxLength={20} />
                 </div>
+
+                {bankLoading && (
+                  <div className="col-span-2 text-xs bg-blue-50 text-blue-700 p-2 rounded border border-blue-200">
+                    Поиск банка по БИК через DaData / справочник...
+                  </div>
+                )}
+                {bankInfo && (
+                  <div className="col-span-2 text-xs bg-green-50 text-green-800 p-2 rounded border border-green-200 flex justify-between items-center">
+                    <div>
+                      <span className="font-semibold">{bankInfo.bankName}</span>
+                      {bankInfo.corrAccount ? <span className="ml-2 text-muted-foreground font-mono">к/с: {bankInfo.corrAccount}</span> : null}
+                      {bankInfo.city ? <span className="ml-2 text-muted-foreground">· {bankInfo.city}</span> : null}
+                    </div>
+                    <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-black/5">
+                      {bankInfo.source === "dadata" ? "DaData API" : "Справочник БИК"}
+                    </span>
+                  </div>
+                )}
+                {bankError && (
+                  <div className="col-span-2 text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                    {bankError}
+                  </div>
+                )}
               </div>
             </div>
 

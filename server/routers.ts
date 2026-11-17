@@ -48,6 +48,7 @@ import {
   getCounterpartyDocuments,
 } from "./db";
 import { deleteAttachmentObject, uploadAttachment, usesS3AttachmentStorage } from "./attachmentStorage";
+import { isDaDataConfigured, lookupBankByBik } from "./bankLookupService";
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
@@ -667,6 +668,19 @@ export const appRouter = router({
     restore: publicProcedure
       .input(z.object({ entityType: z.enum(["counterparty", "contract", "deal", "specification", "waybill", "attachment"]), id: z.number().int().positive() }))
       .mutation(({ input, ctx }) => restoreDeletedRecord(input.entityType, input.id, ctx.user.name)),
+  }),
+
+  bank: router({
+    lookupByBik: publicProcedure
+      .input(z.object({ bik: z.string() }))
+      .query(async ({ input }) => {
+        return await lookupBankByBik(input.bik);
+      }),
+    status: publicProcedure.query(() => {
+      return {
+        dadataConfigured: isDaDataConfigured(),
+      };
+    }),
   }),
 });
 
