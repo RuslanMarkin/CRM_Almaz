@@ -298,7 +298,7 @@ export function DealDeskModal({
               </code>
             </div>
             <div style={{ fontSize: "11.5px", color: isLoss ? "#DC2626" : isProfitable ? "#16A34A" : "var(--soil-soft)", fontWeight: 600 }}>
-              {isLoss ? "⚠ Внимание: сделка убыточна!" : isProfitable ? `Рентабельность: +${marginPercent}%` : "Заполните цены"}
+              {isLoss ? "Внимание: сделка убыточна!" : isProfitable ? `Рентабельность: +${marginPercent}%` : "Заполните цены"}
             </div>
           </div>
 
@@ -535,7 +535,7 @@ export function DealDeskModal({
                 ))}
               </select>
               <span style={{ fontSize: "10px", color: "var(--soil-soft)", marginTop: "4px", display: "block", lineHeight: 1.3 }}>
-                💡 По одному договору привлекается множество перевозчиков. Конкретный перевозчик, авто и водитель указываются в каждой выписанной ТТН.
+                По одному договору привлекается множество перевозчиков. Конкретный перевозчик, авто и водитель указываются в каждой выписанной ТТН.
               </span>
             </div>
 
@@ -769,10 +769,7 @@ export function DealDeskModal({
         </div>
 
         {/* Footer */}
-        <div className="agro-dialog-footer" style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: "12px", color: "var(--soil-soft)" }}>
-            Номер сделки: <b>{number}</b> · Статус: <b>{status === "active" ? "В работе" : "Подготовка"}</b>
-          </div>
+        <div className="agro-dialog-footer" style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
           <div style={{ display: "flex", gap: "10px" }}>
             <button type="button" className="agro-btn ghost" onClick={onClose} disabled={saving}>
               Отмена
@@ -791,7 +788,7 @@ export function DealDeskModal({
                 fontWeight: 700,
               }}
             >
-              <span>{saving ? "Сохранение..." : editingDealId ? "Сохранить изменения" : "🚀 Запустить сделку"}</span>
+              <span>{saving ? "Сохранение..." : editingDealId ? "Сохранить изменения" : "Запустить сделку"}</span>
             </button>
           </div>
         </div>
