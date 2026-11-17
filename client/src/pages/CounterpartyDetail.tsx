@@ -2,7 +2,6 @@ import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_TYPES, CONTRACT_STATUSES, SPEC_STATUSES, WAYBILL_STATUSES, formatDate, formatCurrency } from "@/lib/utils";
 import { COUNTERPARTY_STATUSES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
-import { StatutoryDocumentsSection } from "@/components/StatutoryDocumentsSection";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Building2, BookOpen, ScrollText, Truck, Copy } from "lucide-react";
@@ -123,12 +122,6 @@ export default function CounterpartyDetail() {
               <p className="text-sm text-foreground">{cp.notes}</p>
             </div>
           )}
-
-          <StatutoryDocumentsSection
-            counterpartyId={id}
-            vatType={cp.vatType as CounterpartyVatType}
-            counterpartyName={cp.name}
-          />
         </div>
 
         {/* Sidebar: linked documents */}
