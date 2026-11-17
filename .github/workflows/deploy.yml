@@ -40,7 +40,7 @@ jobs:
 
       - name: Rebuild and restart application container
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd /opt/almaz && docker compose build app && docker compose up -d --no-deps app"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd /opt/almaz && docker compose build app && docker compose up -d"
 
       - name: Verify deployment health
         run: |
