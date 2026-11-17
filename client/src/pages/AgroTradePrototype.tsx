@@ -778,8 +778,6 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               <PageHead
                 title="Дашборд"
                 subtitle="Оперативная сводка по внесённым договорам, спецификациям и ТТН"
-                action="⚡ Провести сделку (Deal Desk)"
-                onAction={openCreateDeal}
               />
               <div className="agro-kpi-row">
                 <Kpi tone="wheat" label="Активные договоры" value={String(dashboardData.activeContracts)} delta={`Всего: ${contracts.length}`} onClick={() => showView("contracts")} />
