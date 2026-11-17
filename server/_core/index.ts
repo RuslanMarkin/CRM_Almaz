@@ -2,7 +2,7 @@ import "dotenv/config";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "http";
 import { getContractById, getDocumentAttachmentById, getOrganizationProfile, getWaybillDetails, migrateDatabase } from "../db";
-import { getAttachmentDownloadUrl } from "../attachmentStorage";
+import { getAttachmentDownloadUrl, getAttachmentStream, decodeDataUrl } from "../attachmentStorage";
 import { generateContractPrintHtml } from "../contractPrintService";
 import { generateWaybillPrintHtml } from "../waybillPrintService";
 import { generateWaybillXlsx } from "../waybillXlsxService";
@@ -80,12 +80,44 @@ async function startServer() {
     }
     try {
       const attachment = await getDocumentAttachmentById(id);
-      if (!attachment?.storageKey) {
+      if (!attachment) {
         res.status(404).json({ error: "Attachment file not found" });
         return;
       }
+
+      const isInline = req.query.inline === "1" || req.query.view === "1";
+      const dispositionType = isInline ? "inline" : "attachment";
+      const encodedFileName = encodeURIComponent(attachment.fileName || "document");
+
       res.setHeader("Cache-Control", "private, no-store");
-      res.redirect(302, await getAttachmentDownloadUrl(attachment.storageKey));
+      res.setHeader(
+        "Content-Disposition",
+        `${dispositionType}; filename*=UTF-8''${encodedFileName}`
+      );
+      if (attachment.contentType) {
+        res.setHeader("Content-Type", attachment.contentType);
+      }
+
+      if (attachment.storageKey) {
+        try {
+          const stream = await getAttachmentStream(attachment.storageKey);
+          stream.pipe(res);
+          return;
+        } catch (s3Error) {
+          console.warn("Direct stream from S3 failed, falling back to presigned URL:", s3Error);
+          res.redirect(302, await getAttachmentDownloadUrl(attachment.storageKey));
+          return;
+        }
+      }
+
+      if (attachment.dataUrl) {
+        const buffer = decodeDataUrl(attachment.dataUrl);
+        res.setHeader("Content-Length", String(buffer.length));
+        res.send(buffer);
+        return;
+      }
+
+      res.status(404).json({ error: "Attachment content not found" });
     } catch (error) {
       console.error("Attachment download error:", error);
       res.status(500).json({ error: "Failed to get attachment file" });
