@@ -8,6 +8,7 @@ import { Calculator, LogOut, Plus, Truck } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DealDeskModal, type DealDeskSubmission } from "@/components/DealDeskModal";
 import { AddContractSpecificationModal, type ContractRef, type SpecEditingData } from "@/components/AddContractSpecificationModal";
+import { useBankLookup } from "@/hooks/useBankLookup";
 import Waybills from "./Waybills";
 import Contracts from "./Contracts";
 import Specifications from "./Specifications";
@@ -1979,6 +1980,40 @@ function CounterpartyFormModal({
   onSubmit: () => void;
 }) {
   const setField = (key: keyof CounterpartyFormState, value: string) => onChange({ ...form, [key]: value });
+  const { lookup: lookupBank, loading: bankLoading, bankInfo, error: bankError, reset: resetBank } = useBankLookup();
+
+  const handleBikChange = async (bikValue: string) => {
+    setField("bankBik", bikValue);
+    const clean = bikValue.replace(/\D/g, "");
+    if (clean.length === 9) {
+      const bank = await lookupBank(clean);
+      if (bank) {
+        onChange({
+          ...form,
+          bankBik: clean,
+          bankName: bank.bankName,
+          corrAccount: bank.corrAccount || form.corrAccount,
+        });
+      }
+    } else if (bankInfo || bankError) {
+      resetBank();
+    }
+  };
+
+  const handleManualBikLookup = async () => {
+    const clean = form.bankBik.replace(/\D/g, "");
+    if (clean.length === 9) {
+      const bank = await lookupBank(clean);
+      if (bank) {
+        onChange({
+          ...form,
+          bankBik: clean,
+          bankName: bank.bankName,
+          corrAccount: bank.corrAccount || form.corrAccount,
+        });
+      }
+    }
+  };
 
   return (
     <div className="agro-dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -2037,12 +2072,85 @@ function CounterpartyFormModal({
         </div>
 
         <div className="agro-form-section">
-          <h3>Банковские реквизиты</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <h3 style={{ margin: 0 }}>Банковские реквизиты</h3>
+            {form.bankBik && form.bankBik.replace(/\D/g, "").length === 9 && (
+              <button
+                type="button"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--brand, #1b4d3e)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px 6px",
+                  textDecoration: "underline",
+                }}
+                onClick={handleManualBikLookup}
+                disabled={bankLoading}
+              >
+                {bankLoading ? "Поиск..." : "Найти по БИК (DaData)"}
+              </button>
+            )}
+          </div>
           <div className="agro-form-grid">
-            <label className="agro-field agro-field-wide"><span>Наименование банка</span><input value={form.bankName} onChange={(event) => setField("bankName", event.target.value)} /></label>
-            <label className="agro-field"><span>БИК</span><input value={form.bankBik} maxLength={9} onChange={(event) => setField("bankBik", event.target.value)} /></label>
-            <label className="agro-field"><span>Расчётный счёт</span><input value={form.bankAccount} maxLength={20} onChange={(event) => setField("bankAccount", event.target.value)} /></label>
-            <label className="agro-field agro-field-wide"><span>Корреспондентский счёт</span><input value={form.corrAccount} maxLength={20} onChange={(event) => setField("corrAccount", event.target.value)} /></label>
+            <label className="agro-field">
+              <span>БИК</span>
+              <input
+                value={form.bankBik}
+                maxLength={9}
+                placeholder="044525225"
+                onChange={(event) => handleBikChange(event.target.value)}
+              />
+            </label>
+            <label className="agro-field">
+              <span>Расчётный счёт</span>
+              <input
+                value={form.bankAccount}
+                maxLength={20}
+                placeholder="40702810000000000000"
+                onChange={(event) => setField("bankAccount", event.target.value)}
+              />
+            </label>
+            <label className="agro-field agro-field-wide">
+              <span>Наименование банка</span>
+              <input
+                value={form.bankName}
+                placeholder="ПАО СБЕРБАНК"
+                onChange={(event) => setField("bankName", event.target.value)}
+              />
+            </label>
+            <label className="agro-field agro-field-wide">
+              <span>Корреспондентский счёт</span>
+              <input
+                value={form.corrAccount}
+                maxLength={20}
+                placeholder="30101810400000000225"
+                onChange={(event) => setField("corrAccount", event.target.value)}
+              />
+            </label>
+
+            {bankLoading && (
+              <div className="agro-bank-hint agro-bank-loading">
+                <span>Поиск банка по БИК через DaData / справочник...</span>
+              </div>
+            )}
+            {bankInfo && (
+              <div className="agro-bank-hint agro-bank-found">
+                <div>
+                  <strong>{bankInfo.bankName}</strong>
+                  {bankInfo.corrAccount ? <span> · к/с {bankInfo.corrAccount}</span> : null}
+                  {bankInfo.city ? <span> · {bankInfo.city}</span> : null}
+                </div>
+                <span className="agro-bank-source">{bankInfo.source === "dadata" ? "DaData API" : "Справочник БИК"}</span>
+              </div>
+            )}
+            {bankError && (
+              <div className="agro-bank-hint agro-bank-error">
+                <span>{bankError}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2072,6 +2180,41 @@ function OrganizationProfileModal({
   onSubmit: () => void;
 }) {
   const setField = (key: keyof OrganizationFormState, value: string) => onChange({ ...form, [key]: value });
+  const { lookup: lookupBank, loading: bankLoading, bankInfo, error: bankError, reset: resetBank } = useBankLookup();
+
+  const handleBikChange = async (bikValue: string) => {
+    setField("bankBik", bikValue);
+    const clean = bikValue.replace(/\D/g, "");
+    if (clean.length === 9) {
+      const bank = await lookupBank(clean);
+      if (bank) {
+        onChange({
+          ...form,
+          bankBik: clean,
+          bankName: bank.bankName,
+          corrAccount: bank.corrAccount || form.corrAccount,
+        });
+      }
+    } else if (bankInfo || bankError) {
+      resetBank();
+    }
+  };
+
+  const handleManualBikLookup = async () => {
+    const clean = form.bankBik.replace(/\D/g, "");
+    if (clean.length === 9) {
+      const bank = await lookupBank(clean);
+      if (bank) {
+        onChange({
+          ...form,
+          bankBik: clean,
+          bankName: bank.bankName,
+          corrAccount: bank.corrAccount || form.corrAccount,
+        });
+      }
+    }
+  };
+
   return (
     <div className="agro-dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="agro-dialog agro-counterparty-form" role="dialog" aria-modal="true" aria-label="Карточка собственной организации" onMouseDown={(event) => event.stopPropagation()}>
@@ -2100,14 +2243,87 @@ function OrganizationProfileModal({
           </div>
         </div>
         <div className="agro-form-section">
-          <h3>Адреса и банк</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <h3 style={{ margin: 0 }}>Адреса и банк</h3>
+            {form.bankBik && form.bankBik.replace(/\D/g, "").length === 9 && (
+              <button
+                type="button"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--brand, #1b4d3e)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px 6px",
+                  textDecoration: "underline",
+                }}
+                onClick={handleManualBikLookup}
+                disabled={bankLoading}
+              >
+                {bankLoading ? "Поиск..." : "Найти по БИК (DaData)"}
+              </button>
+            )}
+          </div>
           <div className="agro-form-grid">
             <label className="agro-field agro-field-wide"><span>Юридический адрес</span><input value={form.legalAddress} onChange={(event) => setField("legalAddress", event.target.value)} /></label>
             <label className="agro-field agro-field-wide"><span>Почтовый адрес</span><input value={form.postalAddress} onChange={(event) => setField("postalAddress", event.target.value)} /></label>
-            <label className="agro-field agro-field-wide"><span>Наименование банка</span><input value={form.bankName} onChange={(event) => setField("bankName", event.target.value)} /></label>
-            <label className="agro-field"><span>БИК</span><input value={form.bankBik} maxLength={9} onChange={(event) => setField("bankBik", event.target.value)} /></label>
-            <label className="agro-field"><span>Расчётный счёт</span><input value={form.bankAccount} maxLength={20} onChange={(event) => setField("bankAccount", event.target.value)} /></label>
-            <label className="agro-field agro-field-wide"><span>Корреспондентский счёт</span><input value={form.corrAccount} maxLength={20} onChange={(event) => setField("corrAccount", event.target.value)} /></label>
+            <label className="agro-field">
+              <span>БИК</span>
+              <input
+                value={form.bankBik}
+                maxLength={9}
+                placeholder="044525225"
+                onChange={(event) => handleBikChange(event.target.value)}
+              />
+            </label>
+            <label className="agro-field">
+              <span>Расчётный счёт</span>
+              <input
+                value={form.bankAccount}
+                maxLength={20}
+                placeholder="40702810000000000000"
+                onChange={(event) => setField("bankAccount", event.target.value)}
+              />
+            </label>
+            <label className="agro-field agro-field-wide">
+              <span>Наименование банка</span>
+              <input
+                value={form.bankName}
+                placeholder="ПАО СБЕРБАНК"
+                onChange={(event) => setField("bankName", event.target.value)}
+              />
+            </label>
+            <label className="agro-field agro-field-wide">
+              <span>Корреспондентский счёт</span>
+              <input
+                value={form.corrAccount}
+                maxLength={20}
+                placeholder="30101810400000000225"
+                onChange={(event) => setField("corrAccount", event.target.value)}
+              />
+            </label>
+
+            {bankLoading && (
+              <div className="agro-bank-hint agro-bank-loading">
+                <span>Поиск банка по БИК через DaData / справочник...</span>
+              </div>
+            )}
+            {bankInfo && (
+              <div className="agro-bank-hint agro-bank-found">
+                <div>
+                  <strong>{bankInfo.bankName}</strong>
+                  {bankInfo.corrAccount ? <span> · к/с {bankInfo.corrAccount}</span> : null}
+                  {bankInfo.city ? <span> · {bankInfo.city}</span> : null}
+                </div>
+                <span className="agro-bank-source">{bankInfo.source === "dadata" ? "DaData API" : "Справочник БИК"}</span>
+              </div>
+            )}
+            {bankError && (
+              <div className="agro-bank-hint agro-bank-error">
+                <span>{bankError}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="agro-dialog-footer"><button type="button" className="agro-btn ghost" onClick={onClose}>Отмена</button><button type="button" className="agro-btn" disabled={saving} onClick={onSubmit}>Сохранить</button></div>
@@ -2375,6 +2591,11 @@ const agroStyles = `
 .agro-field-wide{grid-column:span 2;}
 .agro-field input,.agro-field select,.agro-field textarea{width:100%; border:1px solid var(--line); border-radius:6px; padding:9px 10px; background:#fff; color:var(--ink); font:13px var(--body);}
 .agro-field textarea{resize:vertical;}
+.agro-bank-hint{grid-column:span 2; font-size:12px; font-weight:500; border-radius:6px; padding:7px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
+.agro-bank-loading{background:#f0f9ff; color:#0369a1; border:1px solid #bae6fd;}
+.agro-bank-found{background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;}
+.agro-bank-error{background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;}
+.agro-bank-source{font-size:10px; text-transform:uppercase; letter-spacing:0.5px; padding:2px 6px; border-radius:4px; background:rgba(0,0,0,0.06); font-weight:600;}
 .agro-dialog-footer{display:flex; justify-content:flex-end; gap:10px; padding-top:20px;}
 .agro-btn:disabled{opacity:.6; cursor:not-allowed;}
 @media (max-width:1100px){

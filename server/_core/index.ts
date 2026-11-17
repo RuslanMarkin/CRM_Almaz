@@ -6,6 +6,7 @@ import { getAttachmentDownloadUrl, getAttachmentStream, decodeDataUrl } from "..
 import { generateContractPrintHtml } from "../contractPrintService";
 import { generateWaybillPrintHtml } from "../waybillPrintService";
 import { generateWaybillXlsx } from "../waybillXlsxService";
+import { lookupBankByBik } from "../bankLookupService";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
@@ -234,6 +235,22 @@ async function startServer() {
     } catch (err) {
       console.error("Contract print preview generation error:", err);
       res.status(500).json({ error: "Failed to generate contract print preview" });
+    }
+  });
+
+  // Bank details lookup by BIK (DaData / CBR catalog)
+  app.get("/api/bank/:bik", async (req, res) => {
+    try {
+      const bank = await lookupBankByBik(req.params.bik);
+      if (!bank) {
+        res.status(404).json({ error: "Банк не найден по указанному БИК" });
+        return;
+      }
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.json(bank);
+    } catch (err) {
+      console.error("Bank lookup error:", err);
+      res.status(500).json({ error: "Ошибка при получении данных банка" });
     }
   });
 
