@@ -193,10 +193,6 @@ const navItems: Array<{ key: ViewKey; icon: string; label: string; disabled?: bo
   { key: "contractors", icon: "☰", label: "Контрагенты" },
   { key: "contracts", icon: "📖", label: "Договоры" },
   { key: "specifications", icon: "📄", label: "Спецификации" },
-  { key: "logistics", icon: "▤", label: "Логистика", disabled: true },
-  { key: "receivables", icon: "฿", label: "Дебиторка", disabled: true },
-  { key: "bank", icon: "▣", label: "Банк", disabled: true },
-  { key: "ai-agent", icon: "✦", label: "ИИ-агент / Почта", disabled: true },
   { key: "ttn", icon: "▥", label: "ТТН" },
 ];
 
@@ -729,8 +725,6 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
           <div className="agro-logo">
             Алмаз<span>Агро</span>
           </div>
-          <div className="agro-logo-sub">Trading OS · прототип</div>
-          <div className="agro-motto">твёрдые решения</div>
 
           <div className="agro-user-badge" style={{ cursor: "default" }}>
             <div className="av">А</div>
@@ -776,12 +770,6 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               </button>
             ))}
           </nav>
-
-          <div className="agro-sidebar-foot">
-            Все изменения сохраняются автоматически.
-            <br />
-            <button type="button">Сбросить к демо-данным</button>
-          </div>
         </aside>
 
         <main className="agro-main">
