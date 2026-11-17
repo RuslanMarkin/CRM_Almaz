@@ -100,6 +100,25 @@ interface QuickPartyForm {
   phone: string;
 }
 
+interface QuickContractForm {
+  number: string;
+  counterpartyId: string;
+  contractKind: "purchase" | "sale" | "carriage";
+  type: "framework" | "one_time" | "service";
+  startDate: string;
+  amount: string;
+}
+
+interface QuickSpecForm {
+  number: string;
+  contractId: string;
+  cargoName: string;
+  volumeTotal: string;
+  pricePerUnit: string;
+  loadingAddress: string;
+  unloadingAddress: string;
+}
+
 interface ClosureForm {
   dispatchedWeight: string;
   receivedWeight: string;
@@ -124,6 +143,25 @@ const quickPartyEmpty: QuickPartyForm = {
   legalAddress: "",
   actualAddress: "",
   phone: "",
+};
+
+const quickContractEmpty: QuickContractForm = {
+  number: "",
+  counterpartyId: "",
+  contractKind: "purchase",
+  type: "framework",
+  startDate: new Date().toISOString().split("T")[0],
+  amount: "",
+};
+
+const quickSpecEmpty: QuickSpecForm = {
+  number: "",
+  contractId: "",
+  cargoName: "",
+  volumeTotal: "",
+  pricePerUnit: "",
+  loadingAddress: "",
+  unloadingAddress: "",
 };
 
 function createEmptyClosureForm(): ClosureForm {
@@ -283,6 +321,10 @@ export default function Waybills() {
   const [quickPartyOpen, setQuickPartyOpen] = useState(false);
   const [quickPartyRole, setQuickPartyRole] = useState<PartyRole>("supplier");
   const [quickParty, setQuickParty] = useState<QuickPartyForm>(quickPartyEmpty);
+  const [quickContractOpen, setQuickContractOpen] = useState(false);
+  const [quickContract, setQuickContract] = useState<QuickContractForm>(quickContractEmpty);
+  const [quickSpecOpen, setQuickSpecOpen] = useState(false);
+  const [quickSpec, setQuickSpec] = useState<QuickSpecForm>(quickSpecEmpty);
   const [closureOpen, setClosureOpen] = useState(false);
   const [closingWaybill, setClosingWaybill] = useState<any | null>(null);
   const [closureForm, setClosureForm] = useState<ClosureForm>(createEmptyClosureForm);
@@ -364,6 +406,34 @@ export default function Waybills() {
       setQuickPartyOpen(false);
       setQuickParty(quickPartyEmpty);
       toast.success("Контрагент добавлен и выбран");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const createContractMutation = trpc.contracts.create.useMutation({
+    onSuccess: async () => {
+      const updatedContracts = await utils.contracts.list.fetch({});
+      const created = updatedContracts?.find((c) => c.contract.number === quickContract.number.trim());
+      if (created) {
+        handleContractChange(String(created.contract.id));
+      }
+      setQuickContractOpen(false);
+      setQuickContract(quickContractEmpty);
+      toast.success(`Договор № ${quickContract.number} создан и выбран`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const createSpecMutation = trpc.specifications.create.useMutation({
+    onSuccess: async () => {
+      const updatedSpecs = await utils.specifications.list.fetch({});
+      const created = updatedSpecs?.find((s) => s.specification.number === quickSpec.number.trim());
+      if (created) {
+        handleSpecChange(String(created.specification.id));
+      }
+      setQuickSpecOpen(false);
+      setQuickSpec(quickSpecEmpty);
+      toast.success(`Спецификация № ${quickSpec.number} создана и выбрана`);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -584,6 +654,87 @@ export default function Waybills() {
       legalAddress: quickParty.legalAddress || undefined,
       actualAddress: quickParty.actualAddress || undefined,
       phone: quickParty.phone || undefined,
+    });
+  }
+
+  function openQuickContract() {
+    const defaultKind = form.buyerId && !form.supplierId ? "sale" : "purchase";
+    const defaultPartyId = defaultKind === "sale" ? form.buyerId : form.supplierId;
+    setQuickContract({
+      ...quickContractEmpty,
+      number: `ДГ-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      counterpartyId: defaultPartyId || "",
+      contractKind: defaultKind,
+      startDate: new Date().toISOString().split("T")[0],
+    });
+    setQuickContractOpen(true);
+  }
+
+  function openQuickSpec() {
+    if (!form.contractId) {
+      toast.error("Сначала выберите или создайте договор");
+      return;
+    }
+    const selectedContract = contracts?.find((item) => item.contract.id === parseInt(form.contractId));
+    const contractParty = selectedContract ? counterparties?.find((p) => p.id === selectedContract.contract.counterpartyId) : undefined;
+    setQuickSpec({
+      ...quickSpecEmpty,
+      number: `СП-${Math.floor(10 + Math.random() * 90)}`,
+      contractId: form.contractId,
+      cargoName: form.cargoName || "Пшеница",
+      volumeTotal: form.quantity || "",
+      pricePerUnit: form.pricePerUnit || "",
+      loadingAddress: form.loadingAddress || contractParty?.actualAddress || contractParty?.legalAddress || "",
+      unloadingAddress: form.unloadingAddress || "",
+    });
+    setQuickSpecOpen(true);
+  }
+
+  function handleQuickContractSubmit() {
+    if (!quickContract.number.trim()) {
+      toast.error("Укажите номер договора");
+      return;
+    }
+    if (!quickContract.counterpartyId) {
+      toast.error("Выберите контрагента");
+      return;
+    }
+    createContractMutation.mutate({
+      number: quickContract.number.trim(),
+      counterpartyId: parseInt(quickContract.counterpartyId),
+      contractKind: quickContract.contractKind,
+      type: quickContract.type,
+      startDate: quickContract.startDate ? new Date(quickContract.startDate) : undefined,
+      amount: quickContract.amount || undefined,
+      status: "active",
+    });
+  }
+
+  function handleQuickSpecSubmit() {
+    if (!quickSpec.number.trim()) {
+      toast.error("Укажите номер спецификации");
+      return;
+    }
+    if (!quickSpec.contractId) {
+      toast.error("Выберите договор");
+      return;
+    }
+    const contract = contracts?.find((item) => item.contract.id === parseInt(quickSpec.contractId));
+    if (!contract) {
+      toast.error("Договор не найден");
+      return;
+    }
+
+    createSpecMutation.mutate({
+      number: quickSpec.number.trim(),
+      contractId: parseInt(quickSpec.contractId),
+      counterpartyId: contract.contract.counterpartyId,
+      cargoName: quickSpec.cargoName.trim() || undefined,
+      volumeTotal: quickSpec.volumeTotal || undefined,
+      pricePerUnit: quickSpec.pricePerUnit || undefined,
+      loadingAddress: quickSpec.loadingAddress.trim() || undefined,
+      unloadingAddress: quickSpec.unloadingAddress.trim() || undefined,
+      status: "active",
     });
   }
 
@@ -866,7 +1017,16 @@ export default function Waybills() {
               <div className="flex items-center gap-2 mb-3"><Link2 className="text-primary" /><h2 className="text-sm font-semibold">Основа документа</h2></div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.25fr)_minmax(10rem,1fr)]">
                 <div className="min-w-0">
-                  <Label>Договор *</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Договор *</Label>
+                    <button
+                      type="button"
+                      onClick={openQuickContract}
+                      className="text-xs text-primary hover:underline cursor-pointer"
+                    >
+                      + добавить новый
+                    </button>
+                  </div>
                   <Select value={form.contractId} onValueChange={handleContractChange}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Выберите договор" /></SelectTrigger>
                     <SelectContent>
@@ -879,13 +1039,26 @@ export default function Waybills() {
                   </Select>
                 </div>
                 <div className="min-w-0">
-                  <Label>Спецификация</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Спецификация</Label>
+                    <button
+                      type="button"
+                      onClick={openQuickSpec}
+                      disabled={!form.contractId}
+                      className={`text-xs ${form.contractId ? "text-primary hover:underline cursor-pointer" : "text-muted-foreground opacity-50 cursor-not-allowed"}`}
+                      title={form.contractId ? "Добавить новую спецификацию к договору" : "Сначала выберите договор"}
+                    >
+                      + добавить новую
+                    </button>
+                  </div>
                   <Select value={form.specificationId || "none"} onValueChange={(value) => handleSpecChange(value === "none" ? "" : value)}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Необязательно" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">— Без спецификации —</SelectItem>
                       {filteredSpecifications?.map((row) => (
-                        <SelectItem key={row.specification.id} value={String(row.specification.id)}>{row.specification.number}</SelectItem>
+                        <SelectItem key={row.specification.id} value={String(row.specification.id)}>
+                          {row.specification.number}{row.specification.cargoName ? ` (${row.specification.cargoName})` : ""}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -895,6 +1068,15 @@ export default function Waybills() {
                   <Input type="date" value={form.waybillDate} onChange={field("waybillDate")} className="mt-1" />
                 </div>
               </div>
+
+              {!contracts?.length && (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                  <span>В базе пока нет договоров. Для оформления ТТН создайте договор.</span>
+                  <Button type="button" size="sm" variant="outline" className="h-7 text-xs border-amber-400 bg-white hover:bg-amber-100" onClick={openQuickContract}>
+                    + Создать договор
+                  </Button>
+                </div>
+              )}
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <ScanAttachments
                   entityType="contract"
@@ -1047,6 +1229,211 @@ export default function Waybills() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={quickContractOpen} onOpenChange={setQuickContractOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Новый договор</DialogTitle>
+            <DialogDescription>
+              Договор будет сохранён в реестре и сразу выбран для оформления ТТН.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2">
+              <Label>Номер договора *</Label>
+              <Input
+                value={quickContract.number}
+                onChange={(e) => setQuickContract((prev) => ({ ...prev, number: e.target.value }))}
+                placeholder="Например, ДГ-2026-01"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Вид договора</Label>
+              <Select
+                value={quickContract.contractKind}
+                onValueChange={(val: "purchase" | "sale" | "carriage") =>
+                  setQuickContract((prev) => ({ ...prev, contractKind: val, counterpartyId: "" }))
+                }
+              >
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="purchase">Покупка (с продавцом)</SelectItem>
+                  <SelectItem value="sale">Продажа (с покупателем)</SelectItem>
+                  <SelectItem value="carriage">Перевозка (с перевозчиком)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Тип договора</Label>
+              <Select
+                value={quickContract.type}
+                onValueChange={(val: "framework" | "one_time" | "service") =>
+                  setQuickContract((prev) => ({ ...prev, type: val }))
+                }
+              >
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="framework">Рамочный</SelectItem>
+                  <SelectItem value="one_time">Разовый</SelectItem>
+                  <SelectItem value="service">Услуги</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2">
+              <div className="flex items-center justify-between">
+                <Label>Контрагент *</Label>
+                <span className="text-[11px] text-muted-foreground">
+                  (роль: {quickContract.contractKind === "purchase" ? "продавец" : quickContract.contractKind === "sale" ? "покупатель" : "перевозчик"})
+                </span>
+              </div>
+              <Select
+                value={quickContract.counterpartyId}
+                onValueChange={(val) => setQuickContract((prev) => ({ ...prev, counterpartyId: val }))}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Выберите контрагента" /></SelectTrigger>
+                <SelectContent>
+                  {counterparties
+                    ?.filter((p) => {
+                      const expectedRole = quickContract.contractKind === "purchase" ? "seller" : quickContract.contractKind === "sale" ? "buyer" : "carrier";
+                      return p.businessRole === expectedRole;
+                    })
+                    .map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.shortName ?? p.name} {p.inn ? `(ИНН ${p.inn})` : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              {counterparties?.filter((p) => {
+                const expectedRole = quickContract.contractKind === "purchase" ? "seller" : quickContract.contractKind === "sale" ? "buyer" : "carrier";
+                return p.businessRole === expectedRole;
+              }).length === 0 && (
+                <p className="mt-1 text-xs text-amber-600">
+                  Нет контрагента с требуемой ролью. Добавьте контрагента перед созданием договора.
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>Дата договора</Label>
+              <Input
+                type="date"
+                value={quickContract.startDate}
+                onChange={(e) => setQuickContract((prev) => ({ ...prev, startDate: e.target.value }))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Сумма договора, руб.</Label>
+              <Input
+                value={quickContract.amount}
+                onChange={(e) => setQuickContract((prev) => ({ ...prev, amount: e.target.value }))}
+                placeholder="Необязательно"
+                className="mt-1 font-mono"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickContractOpen(false)}>Отмена</Button>
+            <Button onClick={handleQuickContractSubmit} disabled={createContractMutation.isPending}>
+              Создать и выбрать
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={quickSpecOpen} onOpenChange={setQuickSpecOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Новая спецификация</DialogTitle>
+            <DialogDescription>
+              Спецификация зафиксирует условия поставки груза и подставит их в ТТН.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2">
+              <Label>Договор *</Label>
+              <Select
+                value={quickSpec.contractId}
+                onValueChange={(val) => setQuickSpec((prev) => ({ ...prev, contractId: val }))}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Выберите договор" /></SelectTrigger>
+                <SelectContent>
+                  {contracts?.map((row) => (
+                    <SelectItem key={row.contract.id} value={String(row.contract.id)}>
+                      {row.contract.number}{row.counterparty ? ` — ${row.counterparty.shortName ?? row.counterparty.name}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2">
+              <Label>Номер спецификации *</Label>
+              <Input
+                value={quickSpec.number}
+                onChange={(e) => setQuickSpec((prev) => ({ ...prev, number: e.target.value }))}
+                placeholder="Например, СП-01"
+                className="mt-1"
+              />
+            </div>
+            <div className="col-span-2">
+              <Label>Наименование культуры / груза *</Label>
+              <Input
+                value={quickSpec.cargoName}
+                onChange={(e) => setQuickSpec((prev) => ({ ...prev, cargoName: e.target.value }))}
+                placeholder="Пшеница 3 класс, ячмень и т.д."
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Объём (план), т</Label>
+              <Input
+                type="number"
+                step="0.001"
+                value={quickSpec.volumeTotal}
+                onChange={(e) => setQuickSpec((prev) => ({ ...prev, volumeTotal: e.target.value }))}
+                placeholder="Например, 25.5"
+                className="mt-1 font-mono"
+              />
+            </div>
+            <div>
+              <Label>Цена за тонну, руб.</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={quickSpec.pricePerUnit}
+                onChange={(e) => setQuickSpec((prev) => ({ ...prev, pricePerUnit: e.target.value }))}
+                placeholder="Например, 14500"
+                className="mt-1 font-mono"
+              />
+            </div>
+            <div className="col-span-2">
+              <Label>Пункт погрузки</Label>
+              <Input
+                value={quickSpec.loadingAddress}
+                onChange={(e) => setQuickSpec((prev) => ({ ...prev, loadingAddress: e.target.value }))}
+                placeholder="Элеватор / ток / склад"
+                className="mt-1"
+              />
+            </div>
+            <div className="col-span-2">
+              <Label>Пункт разгрузки</Label>
+              <Input
+                value={quickSpec.unloadingAddress}
+                onChange={(e) => setQuickSpec((prev) => ({ ...prev, unloadingAddress: e.target.value }))}
+                placeholder="Порт / комбинат / склад покупателя"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickSpecOpen(false)}>Отмена</Button>
+            <Button onClick={handleQuickSpecSubmit} disabled={createSpecMutation.isPending}>
+              Создать и выбрать
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={detailsId !== null} onOpenChange={(open) => !open && setDetailsId(null)}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
@@ -1076,6 +1463,23 @@ export default function Waybills() {
                   <p className="mt-1 text-sm font-medium">{details.waybill.driverName || "Не указан"}</p>
                   <p className="text-xs text-muted-foreground">{[details.waybill.vehicleMake, details.waybill.tractorNumber, details.waybill.trailerNumber].filter(Boolean).join(" / ")}</p>
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <ScanAttachments
+                  entityType="contract"
+                  entityId={details.waybill.contractId}
+                  documentKind="contract_scan"
+                  title="Сканы договора"
+                  compact
+                />
+                <ScanAttachments
+                  entityType="contract"
+                  entityId={details.waybill.contractId}
+                  documentKind="specification_scan"
+                  specificationId={details.waybill.specificationId}
+                  title="Сканы спецификации / заявки"
+                  compact
+                />
               </div>
               <div className="rounded-lg border border-border p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Закрытие и вес товара</p>

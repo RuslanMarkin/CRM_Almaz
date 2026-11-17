@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { CONTRACT_STATUSES, CONTRACT_TYPES, formatDate, formatCurrency } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ScanAttachments } from "@/components/ScanAttachments";
+import { ScanAttachments, type StagedAttachment } from "@/components/ScanAttachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,6 +85,8 @@ export default function Contracts() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [stagedScans, setStagedScans] = useState<StagedAttachment[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAutoOpenedCreate, setHasAutoOpenedCreate] = useState(false);
   const [statusDialogId, setStatusDialogId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>({
@@ -102,15 +104,10 @@ export default function Contracts() {
   const { data: counterparties } = trpc.counterparties.list.useQuery({});
 
   const createMutation = trpc.contracts.create.useMutation({
-    onSuccess: () => {
-      utils.contracts.list.invalidate();
-      utils.dashboard.stats.invalidate();
-      setDialogOpen(false);
-      setForm(emptyForm);
-      toast.success("Договор создан");
-    },
     onError: (e) => toast.error(e.message),
   });
+
+  const createAttachmentMutation = trpc.attachments.create.useMutation();
 
   const updateMutation = trpc.contracts.update.useMutation({
     onSuccess: () => {
@@ -142,12 +139,14 @@ export default function Contracts() {
 
   function openCreate() {
     setEditId(null);
+    setStagedScans([]);
     setForm({ ...emptyForm, counterpartyId: preselectedCounterpartyId ?? "" });
     setDialogOpen(true);
   }
 
   function openEdit(row: any) {
     setEditId(row.contract.id);
+    setStagedScans([]);
     setForm({
       number: row.contract.number ?? "",
       counterpartyId: String(row.contract.counterpartyId ?? ""),
@@ -229,7 +228,7 @@ export default function Contracts() {
     }
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!form.number.trim()) { toast.error("Укажите номер договора"); return; }
     if (!form.counterpartyId) { toast.error("Выберите контрагента"); return; }
     const data = {
@@ -242,7 +241,39 @@ export default function Contracts() {
     if (editId) {
       updateMutation.mutate({ id: editId, data });
     } else {
-      createMutation.mutate(data);
+      setIsSubmitting(true);
+      try {
+        const created = await createMutation.mutateAsync(data);
+        const contractId = created?.contract?.id;
+        if (contractId && stagedScans.length > 0) {
+          for (const scan of stagedScans) {
+            try {
+              await createAttachmentMutation.mutateAsync({
+                entityType: "contract",
+                entityId: contractId,
+                documentKind: "contract_scan",
+                fileName: scan.fileName,
+                contentType: scan.contentType,
+                size: scan.size,
+                dataUrl: scan.dataUrl,
+              });
+            } catch (err) {
+              console.error("Failed to upload scan", err);
+              toast.error(`Не удалось сохранить скан ${scan.fileName}`);
+            }
+          }
+        }
+        utils.contracts.list.invalidate();
+        utils.dashboard.stats.invalidate();
+        setDialogOpen(false);
+        setForm(emptyForm);
+        setStagedScans([]);
+        toast.success("Договор создан");
+      } catch (e: any) {
+        toast.error(e?.message || "Ошибка при создании договора");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   }
 
@@ -438,7 +469,16 @@ export default function Contracts() {
       </div>
 
       {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditId(null);
+            setStagedScans([]);
+          }
+        }}
+      >
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editId ? "Редактировать договор" : "Новый договор"}</DialogTitle>
@@ -520,6 +560,8 @@ export default function Contracts() {
               entityId={editId}
               documentKind="contract_scan"
               title="Сканы договора"
+              stagedFiles={stagedScans}
+              onStagedFilesChange={setStagedScans}
             />
           </div>
           <DialogFooter>
@@ -527,9 +569,21 @@ export default function Contracts() {
               <Printer className="w-4 h-4 mr-2" />
               Предпросмотр печати
             </Button>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Отмена</Button>
-            <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-              {editId ? "Сохранить" : "Создать"}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDialogOpen(false);
+                setEditId(null);
+                setStagedScans([]);
+              }}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
+            >
+              {isSubmitting ? "Сохранение..." : editId ? "Сохранить" : "Создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

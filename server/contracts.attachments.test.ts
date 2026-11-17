@@ -72,8 +72,12 @@ describe("contracts API", () => {
   it("passes contract creation data with the selected counterparty link", async () => {
     const caller = appRouter.createCaller(createContext());
     dbMocks.getCounterpartyById.mockResolvedValue({ id: 7, businessRole: "seller" });
+    dbMocks.createContract.mockResolvedValue({
+      contract: { id: 42, number: "Д-42" },
+      counterparty: { id: 7, name: "Продавец" },
+    });
 
-    await caller.contracts.create({
+    const result = await caller.contracts.create({
       number: "Д-42",
       counterpartyId: 7,
       contractKind: "purchase",
@@ -93,6 +97,10 @@ describe("contracts API", () => {
       amount: "125000.50",
       currency: "RUB",
       status: "active",
+    });
+    expect(result).toEqual({
+      contract: { id: 42, number: "Д-42" },
+      counterparty: { id: 7, name: "Продавец" },
     });
   });
 

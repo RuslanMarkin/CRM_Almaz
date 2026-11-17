@@ -5,6 +5,9 @@ const templateRoot = path.resolve(import.meta.dirname);
 
 export default defineConfig({
   root: templateRoot,
+  css: {
+    postcss: {},
+  },
   resolve: {
     alias: {
       "@": path.resolve(templateRoot, "client", "src"),

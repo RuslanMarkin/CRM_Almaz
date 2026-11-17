@@ -1,16 +1,23 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScanAttachments } from "@/components/ScanAttachments";
 import { StatutoryDocumentsSection } from "@/components/StatutoryDocumentsSection";
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
 import { toast } from "sonner";
+import { Calculator, LogOut, Plus, Truck } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { DealDeskModal, type DealDeskSubmission } from "@/components/DealDeskModal";
 import Waybills from "./Waybills";
+import Contracts from "./Contracts";
+import Specifications from "./Specifications";
 
 type ViewKey =
   | "dashboard"
   | "deals"
   | "contractors"
+  | "contracts"
+  | "specifications"
   | "logistics"
   | "receivables"
   | "bank"
@@ -19,6 +26,7 @@ type ViewKey =
 
 interface AgroTradePrototypeProps {
   initialView?: ViewKey;
+  initialCounterpartyId?: number;
 }
 
 type CounterpartyRole = "seller" | "buyer" | "carrier";
@@ -183,6 +191,8 @@ const navItems: Array<{ key: ViewKey; icon: string; label: string; disabled?: bo
   { key: "dashboard", icon: "◧", label: "Дашборд" },
   { key: "deals", icon: "⇄", label: "Сделки" },
   { key: "contractors", icon: "☰", label: "Контрагенты" },
+  { key: "contracts", icon: "📖", label: "Договоры" },
+  { key: "specifications", icon: "📄", label: "Спецификации" },
   { key: "logistics", icon: "▤", label: "Логистика", disabled: true },
   { key: "receivables", icon: "฿", label: "Дебиторка", disabled: true },
   { key: "bank", icon: "▣", label: "Банк", disabled: true },
@@ -190,18 +200,20 @@ const navItems: Array<{ key: ViewKey; icon: string; label: string; disabled?: bo
   { key: "ttn", icon: "▥", label: "ТТН" },
 ];
 
-export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTradePrototypeProps) {
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<"director" | "manager">("director");
+export default function AgroTradePrototype({ initialView = "dashboard", initialCounterpartyId }: AgroTradePrototypeProps) {
+  const { user, logout } = useAuth();
   const [activeView, setActiveView] = useState<ViewKey>(initialView);
   const [counterpartyTab, setCounterpartyTab] = useState<CounterpartyTab>("all");
   const [counterpartyVatTab, setCounterpartyVatTab] = useState<"all" | CounterpartyVatType>("all");
-  const [selectedCounterpartyId, setSelectedCounterpartyId] = useState<number | null>(null);
+  const [selectedCounterpartyId, setSelectedCounterpartyId] = useState<number | null>(initialCounterpartyId ?? null);
   const [counterpartyFormOpen, setCounterpartyFormOpen] = useState(false);
   const [organizationFormOpen, setOrganizationFormOpen] = useState(false);
   const [editingCounterpartyId, setEditingCounterpartyId] = useState<number | null>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
   const [dealFormOpen, setDealFormOpen] = useState(false);
+  const [dealDeskOpen, setDealDeskOpen] = useState(false);
+  const [dealDeskInitial, setDealDeskInitial] = useState<any>(undefined);
+  const [dealDeskSaving, setDealDeskSaving] = useState(false);
   const [editingDealId, setEditingDealId] = useState<number | null>(null);
   const [counterpartyForm, setCounterpartyForm] = useState<CounterpartyFormState>(emptyCounterpartyForm);
   const [organizationForm, setOrganizationForm] = useState<OrganizationFormState>(emptyOrganizationForm);
@@ -214,13 +226,26 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
   const { data: counterparties = [], isLoading: counterpartiesLoading } = trpc.counterparties.list.useQuery();
   const { data: organizationProfile } = trpc.organization.get.useQuery();
 
+  const createContractMutation = trpc.contracts.create.useMutation();
+  const createSpecificationMutation = trpc.specifications.create.useMutation();
+
+  useEffect(() => {
+    if (initialCounterpartyId) {
+      setSelectedCounterpartyId(initialCounterpartyId);
+      setActiveView("contractors");
+    }
+  }, [initialCounterpartyId]);
+
   const createCounterparty = trpc.counterparties.create.useMutation({
     onSuccess: (counterparty) => {
       utils.counterparties.list.invalidate();
       utils.dashboard.stats.invalidate();
       setCounterpartyFormOpen(false);
       setCounterpartyForm(emptyCounterpartyForm);
-      if (counterparty?.id) setSelectedCounterpartyId(counterparty.id);
+      if (counterparty?.id) {
+        setSelectedCounterpartyId(counterparty.id);
+        window.history.pushState(null, "", `/counterparties/${counterparty.id}`);
+      }
       toast.success("Контрагент добавлен");
     },
     onError: (error) => toast.error(error.message),
@@ -248,7 +273,37 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
 
   function showView(view: ViewKey) {
     setActiveView(view);
+    const path = view === "dashboard" ? "/dashboard" : view === "contractors" ? "/counterparties" : `/${view}`;
+    if (window.location.pathname !== path) {
+      window.history.pushState(null, "", path);
+    }
   }
+
+  function closeCounterpartyDialog() {
+    setSelectedCounterpartyId(null);
+    if (window.location.pathname.startsWith("/counterparties/") || window.location.pathname.startsWith("/contractors/")) {
+      window.history.pushState(null, "", "/counterparties");
+    }
+  }
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const pathname = window.location.pathname;
+      const matchDetail = pathname.match(/^\/(?:counterparties|contractors)\/(\d+)$/);
+      if (matchDetail) {
+        setActiveView("contractors");
+        setSelectedCounterpartyId(parseInt(matchDetail[1], 10));
+        return;
+      }
+      const raw = pathname.replace(/^\//, "");
+      const p = (raw === "counterparties" ? "contractors" : raw) as ViewKey;
+      if (p && navItems.some((item) => item.key === p)) {
+        setActiveView(p);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const filteredCounterparties = counterparties.filter((counterparty) => {
     if (counterpartyTab !== "all" && counterparty.businessRole !== counterpartyTab) return false;
@@ -259,6 +314,15 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
   const selectedCounterpartyContracts = selectedCounterparty
     ? contracts.filter((item) => item.contract.counterpartyId === selectedCounterparty.id)
     : [];
+  const selectedCounterpartyWaybills = useMemo(() => {
+    if (!selectedCounterparty) return [];
+    return waybills.filter(
+      (w) =>
+        w.supplierId === selectedCounterparty.id ||
+        w.buyerId === selectedCounterparty.id ||
+        w.carrierId === selectedCounterparty.id
+    );
+  }, [selectedCounterparty, waybills]);
   const dealViewModels = useMemo(() => dealRecords.map((deal) => {
     const linkedSpecifications = specifications.filter((item) => item.specification.dealId === deal.id);
     const linkedContractIds = new Set(linkedSpecifications.map((item) => item.specification.contractId));
@@ -266,10 +330,25 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
     const linkedWaybills = waybills.filter((waybill) => linkedSpecifications.some(
       (specification) => specification.specification.id === waybill.specificationId,
     ));
-    const contractKinds = new Set(linkedContracts.map((item) => item.contract.contractKind));
-    const specificationKinds = new Set(linkedSpecifications.map((item) => (
-      contracts.find((contract) => contract.contract.id === item.specification.contractId)?.contract.contractKind
-    )));
+
+    // Fallbacks from deal participants if contracts exist
+    const sellerContract = contracts.find((item) => item.contract.counterpartyId === deal.sellerId && item.contract.contractKind === "purchase");
+    const buyerContract = contracts.find((item) => item.contract.counterpartyId === deal.buyerId && item.contract.contractKind === "sale");
+    const carrierContract = deal.carrierId ? contracts.find((item) => item.contract.counterpartyId === deal.carrierId && item.contract.contractKind === "carriage") : undefined;
+
+    const purchaseContract = linkedContracts.find((item) => item.contract.contractKind === "purchase") ?? sellerContract;
+    const saleContract = linkedContracts.find((item) => item.contract.contractKind === "sale") ?? buyerContract;
+    const carriageContract = linkedContracts.find((item) => item.contract.contractKind === "carriage") ?? carrierContract;
+
+    const hasPurchaseSpec = linkedSpecifications.some((s) => {
+      const c = contracts.find((row) => row.contract.id === s.specification.contractId);
+      return c?.contract.contractKind === "purchase";
+    });
+    const hasSaleSpec = linkedSpecifications.some((s) => {
+      const c = contracts.find((row) => row.contract.id === s.specification.contractId);
+      return c?.contract.contractKind === "sale";
+    });
+
     const weightProblem = linkedWaybills.some((waybill) => (
       waybill.status === "delivered" && (
         waybill.dispatchedWeight === null || waybill.receivedWeight === null ||
@@ -279,31 +358,71 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
     const allWaybillsClosed = linkedWaybills.length > 0 && linkedWaybills.every((waybill) => (
       waybill.status === "delivered" && waybill.dispatchedWeight !== null && waybill.receivedWeight !== null
     ));
+
     const stages = [
-      { title: "Условия сделки", detail: `${deal.cargoName} · ${formatTons(decimal(deal.plannedVolume))}`, state: "complete" as const },
-      { title: "Договор закупки", detail: contractKinds.has("purchase") ? "Договор привязан" : "Нужен договор с продавцом", state: contractKinds.has("purchase") ? "complete" as const : "waiting" as const },
-      { title: "Договор реализации", detail: contractKinds.has("sale") ? "Договор привязан" : "Нужен договор с покупателем", state: contractKinds.has("sale") ? "complete" as const : "waiting" as const },
       {
-        title: "Спецификации",
-        detail: specificationKinds.has("purchase") && specificationKinds.has("sale")
-          ? `${linkedSpecifications.length} привязано`
-          : "Нужны спецификации закупки и реализации",
-        state: specificationKinds.has("purchase") && specificationKinds.has("sale") ? "complete" as const : "waiting" as const,
+        title: "Условия сделки",
+        detail: `${deal.cargoName} · ${formatTons(decimal(deal.plannedVolume))}`,
+        state: "complete" as const,
       },
       {
-        title: "Перевозчик",
-        detail: deal.carrierId ? (contractKinds.has("carriage") ? "Перевозчик и договор назначены" : "Перевозчик назначен") : "Перевозчик не назначен",
-        state: deal.carrierId ? "complete" as const : "waiting" as const,
+        title: "Договор закупки",
+        detail: purchaseContract ? `Договор № ${purchaseContract.contract.number}` : "Нужен договор с продавцом",
+        state: purchaseContract ? ("complete" as const) : ("waiting" as const),
+      },
+      {
+        title: "Договор реализации",
+        detail: saleContract ? `Договор № ${saleContract.contract.number}` : "Нужен договор с покупателем",
+        state: saleContract ? ("complete" as const) : ("waiting" as const),
+      },
+      {
+        title: "Спецификации",
+        detail: hasPurchaseSpec && hasSaleSpec
+          ? `${linkedSpecifications.length} привязано (закупка + продажа)`
+          : linkedSpecifications.length
+            ? `${linkedSpecifications.length} привязано (требуются закупка и реализация)`
+            : "Нужны спецификации закупки и реализации",
+        state: hasPurchaseSpec && hasSaleSpec ? ("complete" as const) : ("waiting" as const),
+      },
+      {
+        title: "Перевозчики",
+        detail: (() => {
+          const uniqueCarrierNames = Array.from(new Set(linkedWaybills.map((w) => w.carrierName).filter(Boolean)));
+          if (uniqueCarrierNames.length > 0) {
+            return uniqueCarrierNames.length === 1
+              ? String(uniqueCarrierNames[0])
+              : `${uniqueCarrierNames.length} перевозчиков в рейсах (${uniqueCarrierNames.slice(0, 2).join(", ")}${uniqueCarrierNames.length > 2 ? "..." : ""})`;
+          }
+          if (deal.carrierId) {
+            return carriageContract ? `Назначен · Договор № ${carriageContract.contract.number}` : "Генеральный перевозчик назначен";
+          }
+          return "Пул перевозчиков (помашинно в ТТН)";
+        })(),
+        state: (deal.carrierId || linkedWaybills.some((w) => w.carrierName || w.carrierId)) ? ("complete" as const) : ("waiting" as const),
       },
       {
         title: "Отгрузка",
-        detail: linkedWaybills.length ? `ТТН: ${linkedWaybills.length}, в пути: ${linkedWaybills.filter((waybill) => waybill.status === "in_transit").length}` : "ТТН ещё не сформированы",
-        state: linkedWaybills.length ? "complete" as const : "waiting" as const,
+        detail: linkedWaybills.length
+          ? `ТТН: ${linkedWaybills.length}${linkedWaybills.filter((w) => w.status === "in_transit").length ? `, в пути: ${linkedWaybills.filter((w) => w.status === "in_transit").length}` : ""}`
+          : "ТТН ещё не сформированы",
+        state: linkedWaybills.length ? ("complete" as const) : ("waiting" as const),
       },
       {
         title: "Закрытие и вес",
-        detail: weightProblem ? "Есть расхождения или не внесён факт" : allWaybillsClosed ? "Все ТТН закрыты" : "Ожидается закрытие ТТН",
-        state: weightProblem ? "attention" as const : allWaybillsClosed ? "complete" as const : "waiting" as const,
+        detail: !linkedWaybills.length
+          ? "Ожидается закрытие ТТН"
+          : weightProblem
+            ? "Есть расхождения по весу"
+            : allWaybillsClosed
+              ? "Все ТТН закрыты без расхождений"
+              : "ТТН ещё в пути / ожидают приёмки",
+        state: !linkedWaybills.length
+          ? ("waiting" as const)
+          : weightProblem
+            ? ("attention" as const)
+            : allWaybillsClosed
+              ? ("complete" as const)
+              : ("waiting" as const),
       },
     ];
     return { deal, linkedSpecifications, linkedContracts, linkedWaybills, stages, weightProblem, allWaybillsClosed };
@@ -373,8 +492,8 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
 
   function openCreateDeal() {
     setEditingDealId(null);
-    setDealForm(emptyDealForm);
-    setDealFormOpen(true);
+    setDealDeskInitial(undefined);
+    setDealDeskOpen(true);
   }
 
   function openEditDeal(dealId: number) {
@@ -382,7 +501,9 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
     if (!model) return;
     const deal = model.deal;
     setEditingDealId(deal.id);
-    setDealForm({
+    const tariffMatch = deal.notes?.match(/Тариф перевозки:\s*(\d+(?:\.\d+)?)/i);
+    const carrierTariff = tariffMatch ? tariffMatch[1] : "1500";
+    setDealDeskInitial({
       number: deal.number,
       sellerId: String(deal.sellerId),
       buyerId: String(deal.buyerId),
@@ -392,6 +513,7 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
       plannedVolume: deal.plannedVolume ?? "",
       purchasePrice: deal.purchasePrice ?? "",
       salePrice: deal.salePrice ?? "",
+      carrierTariff,
       currency: deal.currency ?? "RUB",
       startDate: deal.startDate ? new Date(deal.startDate).toISOString().split("T")[0] : "",
       endDate: deal.endDate ? new Date(deal.endDate).toISOString().split("T")[0] : "",
@@ -400,7 +522,142 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
       specificationIds: model.linkedSpecifications.map((item) => item.specification.id),
     });
     setSelectedDealId(null);
-    setDealFormOpen(true);
+    setDealDeskOpen(true);
+  }
+
+  async function handleDealDeskSubmit(params: DealDeskSubmission) {
+    setDealDeskSaving(true);
+    try {
+      const dealData = {
+        number: params.deal.number,
+        sellerId: params.deal.sellerId,
+        buyerId: params.deal.buyerId,
+        carrierId: params.deal.carrierId,
+        cargoName: params.deal.cargoName,
+        cargoGrade: params.deal.cargoGrade,
+        plannedVolume: params.deal.plannedVolume,
+        purchasePrice: params.deal.purchasePrice,
+        salePrice: params.deal.salePrice,
+        currency: params.deal.currency,
+        startDate: params.deal.startDate ? new Date(params.deal.startDate) : undefined,
+        endDate: params.deal.endDate ? new Date(params.deal.endDate) : undefined,
+        status: params.deal.status,
+        notes: params.carrierTariff
+          ? `Тариф перевозки: ${params.carrierTariff} ₽/т. ${params.deal.notes || ""}`.trim()
+          : params.deal.notes,
+      };
+
+      const saved = editingDealId
+        ? await updateDeal.mutateAsync({ id: editingDealId, data: dealData })
+        : await createDeal.mutateAsync(dealData);
+      if (!saved) throw new Error("Не удалось сохранить сделку");
+
+      const dealId = saved.id;
+      const specIdsToLink = [...(params.specificationIds || [])];
+
+      // Auto-generate contracts and specifications if requested for new deal
+      if (params.autoGenerateDocuments && !editingDealId) {
+        const vol = Number(params.deal.plannedVolume) || 0;
+        const pPrice = Number(params.deal.purchasePrice) || 0;
+        const sPrice = Number(params.deal.salePrice) || 0;
+        const tPrice = Number(params.carrierTariff) || 0;
+
+        try {
+          // A. Purchase Contract & Specification
+          const pContract = await createContractMutation.mutateAsync({
+            number: `ДЗ-${params.deal.number}`,
+            counterpartyId: params.deal.sellerId,
+            contractKind: "purchase",
+            type: "framework",
+            subject: `Поставка зерна: ${params.deal.cargoName}`,
+            amount: vol && pPrice ? String(vol * pPrice) : undefined,
+            status: "active",
+          });
+
+          if (pContract?.contract?.id) {
+            const pSpec = await createSpecificationMutation.mutateAsync({
+              number: `СПЗ-${params.deal.number}`,
+              contractId: pContract.contract.id,
+              counterpartyId: params.deal.sellerId,
+              cargoName: params.deal.cargoName,
+              volumeTotal: params.deal.plannedVolume,
+              pricePerUnit: params.deal.purchasePrice,
+              loadingAddress: params.loadingAddress || undefined,
+              unloadingAddress: params.unloadingAddress || undefined,
+              status: "active",
+            });
+            if (pSpec?.specification?.id) {
+              specIdsToLink.push(pSpec.specification.id);
+            }
+          }
+
+          // B. Sale Contract & Specification
+          const sContract = await createContractMutation.mutateAsync({
+            number: `ДП-${params.deal.number}`,
+            counterpartyId: params.deal.buyerId,
+            contractKind: "sale",
+            type: "framework",
+            subject: `Реализация зерна: ${params.deal.cargoName}`,
+            amount: vol && sPrice ? String(vol * sPrice) : undefined,
+            status: "active",
+          });
+
+          if (sContract?.contract?.id) {
+            const sSpec = await createSpecificationMutation.mutateAsync({
+              number: `СПП-${params.deal.number}`,
+              contractId: sContract.contract.id,
+              counterpartyId: params.deal.buyerId,
+              cargoName: params.deal.cargoName,
+              volumeTotal: params.deal.plannedVolume,
+              pricePerUnit: params.deal.salePrice,
+              loadingAddress: params.loadingAddress || undefined,
+              unloadingAddress: params.unloadingAddress || undefined,
+              status: "active",
+            });
+            if (sSpec?.specification?.id) {
+              specIdsToLink.push(sSpec.specification.id);
+            }
+          }
+
+          // C. Carriage Contract (if carrier assigned)
+          if (params.deal.carrierId) {
+            await createContractMutation.mutateAsync({
+              number: `ДЛ-${params.deal.number}`,
+              counterpartyId: params.deal.carrierId,
+              contractKind: "carriage",
+              type: "service",
+              subject: `Перевозка зерна: ${params.deal.cargoName}`,
+              amount: vol && tPrice ? String(vol * tPrice) : undefined,
+              status: "active",
+            });
+          }
+        } catch (docErr) {
+          console.error("Auto doc generation error:", docErr);
+          toast.error("Сделка создана, но часть документов не сформировалась автоматически");
+        }
+      }
+
+      // Link specifications to deal
+      if (specIdsToLink.length > 0) {
+        await syncDealSpecifications(dealId, specIdsToLink);
+      }
+
+      await Promise.all([
+        utils.deals.list.invalidate(),
+        utils.contracts.list.invalidate(),
+        utils.specifications.list.invalidate(),
+        utils.dashboard.stats.invalidate(),
+      ]);
+
+      setDealDeskOpen(false);
+      setEditingDealId(null);
+      setSelectedDealId(dealId);
+      toast.success(editingDealId ? "Сделка обновлена" : "Сделка запущена! Документы сформированы.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить сделку");
+    } finally {
+      setDealDeskSaving(false);
+    }
   }
 
   async function syncDealSpecifications(dealId: number, specificationIds: number[]) {
@@ -467,51 +724,6 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
     <div className="agro-prototype">
       <style>{agroStyles}</style>
 
-      {!loggedIn && (
-        <div className="agro-login-screen">
-          <div className="agro-login-box">
-            <div className="agro-login-logo">
-              Алмаз<span>Агро</span>
-            </div>
-            <div className="agro-login-sub">Trading OS</div>
-            <div className="agro-form-row">
-              <label>Пользователь</label>
-              <select onChange={(event) => setSelectedRole(event.target.value === "director" ? "director" : "manager")}>
-                <option value="director">Алмаз Агро — директор (Полный доступ)</option>
-                <option value="manager">Иванов А.С. — менеджер</option>
-                <option value="manager">Петрова М.В. — менеджер</option>
-              </select>
-            </div>
-            <div className="agro-form-row">
-              <label>Роль</label>
-              <div className="agro-role-cards">
-                <button
-                  type="button"
-                  className={`agro-role-card ${selectedRole === "director" ? "selected" : ""}`}
-                  onClick={() => setSelectedRole("director")}
-                >
-                  <div className="ri">♛</div>
-                  <div className="rn">Директор</div>
-                  <div className="rd">Полный доступ</div>
-                </button>
-                <button
-                  type="button"
-                  className={`agro-role-card ${selectedRole === "manager" ? "selected" : ""}`}
-                  onClick={() => setSelectedRole("manager")}
-                >
-                  <div className="ri">●</div>
-                  <div className="rn">Менеджер</div>
-                  <div className="rd">Только свои сделки</div>
-                </button>
-              </div>
-            </div>
-            <button type="button" className="agro-btn wide" onClick={() => setLoggedIn(true)}>
-              Войти в систему
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="agro-app">
         <aside className="agro-sidebar">
           <div className="agro-logo">
@@ -520,13 +732,34 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
           <div className="agro-logo-sub">Trading OS · прототип</div>
           <div className="agro-motto">твёрдые решения</div>
 
-          <button type="button" className="agro-user-badge" onClick={() => setLoggedIn(false)}>
-            <div className="av">{selectedRole === "director" ? "Д" : "М"}</div>
-            <div>
-              <div className="un">{selectedRole === "director" ? "Директор" : "Менеджер"}</div>
-              <div className="ur">{selectedRole === "director" ? "Полный доступ" : "Только свои сделки"}</div>
+          <div className="agro-user-badge" style={{ cursor: "default" }}>
+            <div className="av">А</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="un truncate">{user?.name || "Администратор"}</div>
+              <div className="ur">Полный доступ (Админ)</div>
             </div>
-          </button>
+            {logout && (
+              <button
+                type="button"
+                onClick={logout}
+                title="Выйти из системы"
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  color: "var(--grain-deep)",
+                  cursor: "pointer",
+                  padding: "4px 6px",
+                  borderRadius: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--grain)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--grain-deep)")}
+              >
+                <LogOut size={14} />
+              </button>
+            )}
+          </div>
 
           <nav>
             {navItems.map((item) => (
@@ -554,20 +787,25 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
         <main className="agro-main">
           {activeView === "dashboard" && (
             <section className="agro-view">
-              <PageHead title="Дашборд" subtitle="Оперативная сводка по внесённым договорам, спецификациям и ТТН" />
+              <PageHead
+                title="Дашборд"
+                subtitle="Оперативная сводка по внесённым договорам, спецификациям и ТТН"
+                action="⚡ Провести сделку (Deal Desk)"
+                onAction={openCreateDeal}
+              />
               <div className="agro-kpi-row">
-                <Kpi tone="wheat" label="Активные договоры" value={String(dashboardData.activeContracts)} delta={`Всего: ${contracts.length}`} />
-                <Kpi tone="leaf" label="Спецификации в работе" value={String(dashboardData.openSpecifications)} delta={`Остаток: ${formatTons(dashboardData.remainingVolume)}`} />
-                <Kpi tone="soil" label="ТТН в пути" value={String(dashboardData.inTransit)} delta={`Плановый вес: ${formatTons(dashboardData.plannedInTransit)}`} />
-                <Kpi tone="rust" label="Контроль веса" value={String(dashboardData.weightIssues)} delta={`Расхождение: ${formatTons(dashboardData.documentedWeightDifferences)}`} />
+                <Kpi tone="wheat" label="Активные договоры" value={String(dashboardData.activeContracts)} delta={`Всего: ${contracts.length}`} onClick={() => showView("contracts")} />
+                <Kpi tone="leaf" label="Спецификации в работе" value={String(dashboardData.openSpecifications)} delta={`Остаток: ${formatTons(dashboardData.remainingVolume)}`} onClick={() => showView("specifications")} />
+                <Kpi tone="soil" label="ТТН в пути" value={String(dashboardData.inTransit)} delta={`Плановый вес: ${formatTons(dashboardData.plannedInTransit)}`} onClick={() => showView("ttn")} />
+                <Kpi tone="rust" label="Контроль веса" value={String(dashboardData.weightIssues)} delta={`Расхождение: ${formatTons(dashboardData.documentedWeightDifferences)}`} onClick={() => showView("ttn")} />
               </div>
               <div className="agro-dashboard-grid">
                 <Panel title="Документы в работе">
                   <ul className="agro-checklist">
-                    <li><span className="dot ok" /> Активных договоров: <b>{dashboardData.activeContracts}</b></li>
-                    <li><span className="dot ok" /> Открытых спецификаций: <b>{dashboardData.openSpecifications}</b></li>
-                    <li><span className={dashboardData.inTransit ? "dot miss" : "dot ok"} /> ТТН в пути: <b>{dashboardData.inTransit}</b></li>
-                    <li><span className={dashboardData.weightIssues ? "dot miss" : "dot ok"} /> Закрытых ТТН с замечаниями по весу: <b>{dashboardData.weightIssues}</b></li>
+                    <li><span className="dot ok" /> Активных договоров: <button type="button" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", fontWeight: 700, color: "inherit" }} onClick={() => showView("contracts")}>{dashboardData.activeContracts}</button></li>
+                    <li><span className="dot ok" /> Открытых спецификаций: <button type="button" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", fontWeight: 700, color: "inherit" }} onClick={() => showView("specifications")}>{dashboardData.openSpecifications}</button></li>
+                    <li><span className={dashboardData.inTransit ? "dot miss" : "dot ok"} /> ТТН в пути: <button type="button" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", fontWeight: 700, color: "inherit" }} onClick={() => showView("ttn")}>{dashboardData.inTransit}</button></li>
+                    <li><span className={dashboardData.weightIssues ? "dot miss" : "dot ok"} /> Закрытых ТТН с замечаниями по весу: <button type="button" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", fontWeight: 700, color: "inherit" }} onClick={() => showView("ttn")}>{dashboardData.weightIssues}</button></li>
                   </ul>
                 </Panel>
                 <Panel title="Требует заполнения">
@@ -607,9 +845,11 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               <div className="agro-page-head">
                 <div>
                   <div className="agro-page-title">Сделки</div>
-                  <div className="agro-page-sub">Карточка объединяет условия, договоры, спецификации, ТТН и контроль фактического веса</div>
+                  <div className="agro-page-sub">Единый центр: связка закупки, логистики, реализации, ТТН и контроль маржи M</div>
                 </div>
-                <button type="button" className="agro-btn" onClick={openCreateDeal}>＋ Новая сделка</button>
+                <button type="button" className="agro-btn" onClick={openCreateDeal}>
+                  ⚡ Новая сделка (Deal Desk)
+                </button>
               </div>
               {dealsLoading ? <Panel><div className="agro-muted">Загрузка сделок...</div></Panel> : !dealViewModels.length ? (
                 <Panel title="Сделок пока нет">
@@ -689,21 +929,21 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                     className={counterpartyVatTab === "all" ? "active" : ""}
                     onClick={() => setCounterpartyVatTab("all")}
                   >
-                    Все системы
+                    Все
                   </button>
                   <button
                     type="button"
                     className={counterpartyVatTab === "with_vat" ? "active" : ""}
                     onClick={() => setCounterpartyVatTab("with_vat")}
                   >
-                    С НДС
+                    НДС: Да
                   </button>
                   <button
                     type="button"
                     className={counterpartyVatTab === "without_vat" ? "active" : ""}
                     onClick={() => setCounterpartyVatTab("without_vat")}
                   >
-                    Без НДС
+                    НДС: Нет
                   </button>
                 </div>
               </div>
@@ -720,7 +960,14 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                       const statusKey = (counterparty.status ?? "normal") as CounterpartyStatus;
                       const statusMeta = COUNTERPARTY_STATUSES[statusKey] ?? COUNTERPARTY_STATUSES.normal;
                       return (
-                        <tr key={counterparty.id} className="agro-clickable-row" onClick={() => setSelectedCounterpartyId(counterparty.id)}>
+                        <tr
+                          key={counterparty.id}
+                          className="agro-clickable-row"
+                          onClick={() => {
+                            setSelectedCounterpartyId(counterparty.id);
+                            window.history.pushState(null, "", `/counterparties/${counterparty.id}`);
+                          }}
+                        >
                           <td>
                             <strong>{counterparty.shortName || counterparty.name}</strong>
                             {counterparty.shortName && <div className="agro-table-secondary">{counterparty.name}</div>}
@@ -728,7 +975,7 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                           <td><span className="agro-tag">{roleLabels[counterparty.businessRole as CounterpartyRole] ?? "Роль не назначена"}</span></td>
                           <td>
                             <span className={`agro-vat-badge ${counterparty.vatType === "without_vat" ? "no-vat" : "vat"}`}>
-                              {counterparty.vatType === "without_vat" ? "Без НДС" : "С НДС"}
+                              {counterparty.vatType === "without_vat" ? "Нет" : "Да"}
                             </span>
                           </td>
                           <td>{counterparty.region || "—"}</td>
@@ -778,6 +1025,34 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
             />
           )}
 
+          {activeView === "contracts" && (
+            <section className="agro-view agro-ttn-view">
+              <div className="agro-page-head">
+                <div>
+                  <div className="agro-page-title">Договоры</div>
+                  <div className="agro-page-sub">Реестр договоров: закупка, реализация и перевозка</div>
+                </div>
+              </div>
+              <div className="agro-live-module">
+                <Contracts />
+              </div>
+            </section>
+          )}
+
+          {activeView === "specifications" && (
+            <section className="agro-view agro-ttn-view">
+              <div className="agro-page-head">
+                <div>
+                  <div className="agro-page-title">Спецификации</div>
+                  <div className="agro-page-sub">Спецификации к договорам с контролем культур, цен, объемов и отгрузок</div>
+                </div>
+              </div>
+              <div className="agro-live-module">
+                <Specifications />
+              </div>
+            </section>
+          )}
+
           {activeView === "ttn" && (
             <section className="agro-view agro-ttn-view">
               <div className="agro-page-head">
@@ -795,7 +1070,7 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
       </div>
 
       {selectedCounterparty && !counterpartyFormOpen && (
-        <div className="agro-dialog-backdrop" role="presentation" onMouseDown={() => setSelectedCounterpartyId(null)}>
+        <div className="agro-dialog-backdrop" role="presentation" onMouseDown={closeCounterpartyDialog}>
           <section className="agro-dialog agro-counterparty-card" role="dialog" aria-modal="true" aria-label="Карточка контрагента" onMouseDown={(event) => event.stopPropagation()}>
             <div className="agro-dialog-head">
               <div>
@@ -804,11 +1079,11 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                 <div className="agro-dialog-badges">
                   <span className="agro-tag">{roleLabels[selectedCounterparty.businessRole as CounterpartyRole] ?? "Роль не назначена"}</span>
                   <span className={`agro-vat-badge ${selectedCounterparty.vatType === "without_vat" ? "no-vat" : "vat"}`}>
-                    {selectedCounterparty.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"}
+                    {selectedCounterparty.vatType === "without_vat" ? "НДС: Нет" : "НДС: Да"}
                   </span>
                 </div>
               </div>
-              <button type="button" className="agro-icon-button" onClick={() => setSelectedCounterpartyId(null)} aria-label="Закрыть карточку" title="Закрыть">×</button>
+              <button type="button" className="agro-icon-button" onClick={closeCounterpartyDialog} aria-label="Закрыть карточку" title="Закрыть">×</button>
             </div>
             <div className="agro-card-actions">
               <button type="button" className="agro-btn ghost small" onClick={openEditCounterparty}>Редактировать</button>
@@ -817,12 +1092,13 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               <div className="agro-detail-group">
                 <h3>Основное</h3>
                 <DetailItem label="Краткое наименование" value={selectedCounterparty.shortName} />
-                <DetailItem label="Налогообложение" value={selectedCounterparty.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"} />
+                <DetailItem label="НДС" value={selectedCounterparty.vatType === "without_vat" ? "Нет" : "Да"} />
                 <DetailItem label="Регион" value={selectedCounterparty.region} />
                 <DetailItem label="Профиль" value={selectedCounterparty.profile} />
                 <DetailItem label="ИНН" value={selectedCounterparty.inn} />
                 <DetailItem label="КПП" value={selectedCounterparty.kpp} />
                 <DetailItem label="ОГРН" value={selectedCounterparty.ogrn} />
+                <DetailItem label="ОКПО" value={selectedCounterparty.okpo} />
               </div>
               <div className="agro-detail-group">
                 <h3>Адреса и банк</h3>
@@ -844,7 +1120,21 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               />
             </div>
             <div className="agro-counterparty-scans">
-              <h3>Договоры и сканы</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <h3 style={{ margin: 0 }}>Договоры и сканы</h3>
+                <button
+                  type="button"
+                  className="agro-btn compact"
+                  onClick={() => {
+                    const partyId = selectedCounterparty.id;
+                    closeCounterpartyDialog();
+                    showView("contracts");
+                    window.history.pushState(null, "", `/contracts?counterpartyId=${partyId}&create=1`);
+                  }}
+                >
+                  + Добавить договор
+                </button>
+              </div>
               {!selectedCounterpartyContracts.length && <div className="agro-muted">У контрагента пока нет договоров.</div>}
               {selectedCounterpartyContracts.map((item) => {
                 const contractSpecifications = specifications.filter((specification) => specification.specification.contractId === item.contract.id);
@@ -867,11 +1157,54 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                 );
               })}
             </div>
+
+            <div className="agro-counterparty-scans" style={{ marginTop: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <h3 style={{ margin: 0 }}>Накладные (ТТН)</h3>
+                <button
+                  type="button"
+                  className="agro-btn compact"
+                  onClick={() => {
+                    const partyId = selectedCounterparty.id;
+                    closeCounterpartyDialog();
+                    showView("ttn");
+                    window.history.pushState(null, "", `/ttn?counterpartyId=${partyId}&create=1`);
+                  }}
+                >
+                  + Оформить ТТН
+                </button>
+              </div>
+              {!selectedCounterpartyWaybills.length && <div className="agro-muted">Связанных ТТН пока нет.</div>}
+              {selectedCounterpartyWaybills.map((w) => (
+                <div key={w.id} className="agro-linked-contract" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div className="agro-linked-contract-title">ТТН № {w.number}</div>
+                    <div className="agro-muted" style={{ fontSize: "12px" }}>
+                      Груз: {w.cargoName || "—"} | Нетто: {w.netWeight ? `${w.netWeight} т` : "—"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className={`agro-status-badge ${w.status}`}>
+                      {w.status === "in_transit" ? "В пути" : w.status === "delivered" ? "Доставлена" : w.status === "cancelled" ? "Отменена" : "Черновик"}
+                    </span>
+                    <a
+                      href={`/api/waybills/${w.id}/print`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="agro-btn ghost compact"
+                      style={{ textDecoration: "none" }}
+                    >
+                      СП-31 ↗
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         </div>
       )}
 
-      {selectedDeal && !dealFormOpen && (
+      {selectedDeal && !dealDeskOpen && !dealFormOpen && (
         <div className="agro-dialog-backdrop" role="presentation" onMouseDown={() => setSelectedDealId(null)}>
           <section className="agro-dialog agro-deal-dialog" role="dialog" aria-modal="true" aria-label="Карточка сделки" onMouseDown={(event) => event.stopPropagation()}>
             <div className="agro-dialog-head">
@@ -883,8 +1216,48 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               <button type="button" className="agro-icon-button" onClick={() => setSelectedDealId(null)} aria-label="Закрыть карточку" title="Закрыть">×</button>
             </div>
             <div className="agro-card-actions">
-              <button type="button" className="agro-btn ghost small" onClick={() => openEditDeal(selectedDeal.deal.id)}>Редактировать</button>
+              <button type="button" className="agro-btn ghost small" onClick={() => openEditDeal(selectedDeal.deal.id)}>Редактировать в Deal Desk</button>
             </div>
+
+            {/* Formula M Banner */}
+            {(() => {
+              const pPrice = Number(selectedDeal.deal.purchasePrice) || 0;
+              const sPrice = Number(selectedDeal.deal.salePrice) || 0;
+              const vol = Number(selectedDeal.deal.plannedVolume) || 0;
+              const tariffMatch = selectedDeal.deal.notes?.match(/Тариф перевозки:\s*(\d+(?:\.\d+)?)/i);
+              const cTariff = tariffMatch ? Number(tariffMatch[1]) : 1500;
+              const mPerTon = sPrice - pPrice - cTariff;
+              const planProfit = mPerTon * vol;
+              const isProfit = mPerTon > 0;
+              return (
+                <div
+                  style={{
+                    background: isProfit ? "#F0FDF4" : "#FEF2F2",
+                    border: `1.5px solid ${isProfit ? "#86EFAC" : "#FCA5A5"}`,
+                    borderRadius: "10px",
+                    padding: "14px 18px",
+                    margin: "14px 0",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <strong style={{ fontSize: "12px", color: "var(--soil)", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Calculator size={15} style={{ color: "var(--wheat)" }} />
+                      ФОРМУЛА МАРЖИ: M = (Дог П. - ТТН - Дог З.) / Тонн
+                    </strong>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: isProfit ? "#15803D" : "#DC2626" }}>
+                      Маржа M: {mPerTon >= 0 ? "+" : ""}{mPerTon.toLocaleString("ru-RU")} ₽/т
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", fontSize: "12px" }}>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ВЫРУЧКА (П)</span><br /><b>{(vol * sPrice).toLocaleString("ru-RU")} ₽</b></div>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ЗАКУПКА (З)</span><br /><b>{(vol * pPrice).toLocaleString("ru-RU")} ₽</b></div>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ПЕРЕВОЗКА (ТТН)</span><br /><b>{(vol * cTariff).toLocaleString("ru-RU")} ₽</b></div>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ПЛАНОВАЯ ПРИБЫЛЬ</span><br /><b style={{ color: isProfit ? "#15803D" : "#DC2626" }}>{planProfit >= 0 ? "+" : ""}{planProfit.toLocaleString("ru-RU")} ₽</b></div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="agro-deal-summary">
               <DetailItem label="Продавец" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.sellerId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.sellerId)?.name} />
               <DetailItem label="Покупатель" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.buyerId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.buyerId)?.name} />
@@ -906,23 +1279,80 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               </div>
             </div>
             <div className="agro-deal-section">
-              <h3>Связанные документы</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h3 style={{ margin: 0 }}>Рейсы и товарно-транспортные накладные</h3>
+                <button
+                  type="button"
+                  className="agro-btn small"
+                  style={{ gap: "6px" }}
+                  onClick={() => {
+                    setSelectedDealId(null);
+                    showView("ttn");
+                  }}
+                >
+                  <Truck size={13} />
+                  ＋ Оформить ТТН
+                </button>
+              </div>
               <div className="agro-linked-documents">
                 <div><span>Договоров</span><b>{selectedDeal.linkedContracts.length}</b></div>
                 <div><span>Спецификаций</span><b>{selectedDeal.linkedSpecifications.length}</b></div>
-                <div><span>ТТН</span><b>{selectedDeal.linkedWaybills.length}</b></div>
-                <div><span>Закрыто ТТН</span><b>{selectedDeal.linkedWaybills.filter((waybill) => waybill.status === "delivered").length}</b></div>
+                <div><span>Всего ТТН</span><b>{selectedDeal.linkedWaybills.length}</b></div>
+                <div><span>Перевозчиков</span><b>{new Set(selectedDeal.linkedWaybills.map((w) => w.carrierName || w.carrierId).filter(Boolean)).size || (selectedDeal.deal.carrierId ? 1 : 0)}</b></div>
               </div>
               {!selectedDeal.linkedSpecifications.length ? <div className="agro-muted">Привяжите спецификации в режиме редактирования: по ним в сделку попадут договоры и ТТН.</div> : (
                 <div className="agro-linked-document-list">
-                  {selectedDeal.linkedSpecifications.map((item) => <div key={item.specification.id}>Спецификация № {item.specification.number} · {item.specification.cargoName || "Груз не указан"}</div>)}
-                  {selectedDeal.linkedWaybills.map((waybill) => <div key={waybill.id}>ТТН № {waybill.number} · {waybill.status === "delivered" ? "закрыта" : waybill.status === "in_transit" ? "в пути" : "черновик"}</div>)}
+                  {selectedDeal.linkedSpecifications.map((item) => (
+                    <div key={item.specification.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Спецификация № {item.specification.number} · {item.specification.cargoName || "Груз не указан"}</span>
+                      <small style={{ color: "var(--soil-soft)" }}>
+                        {item.specification.pricePerUnit ? `${item.specification.pricePerUnit} ₽/т` : ""}
+                      </small>
+                    </div>
+                  ))}
+                  {selectedDeal.linkedWaybills.map((waybill) => (
+                    <div key={waybill.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px dashed var(--line)" }}>
+                      <div>
+                        <div>
+                          <b>ТТН № {waybill.number}</b>{waybill.netWeight ? ` · ${waybill.netWeight} т` : ""} · <span style={{ color: "var(--soil-soft)" }}>{waybill.status === "delivered" ? "доставлена" : waybill.status === "in_transit" ? "в пути" : "черновик"}</span>
+                        </div>
+                        <div style={{ fontSize: "12px", color: "var(--soil-soft)", marginTop: "2px" }}>
+                          🚛 {waybill.carrierName || "Перевозчик не назначен"}{waybill.driverName ? ` · Водитель: ${waybill.driverName}` : ""}{waybill.tractorNumber ? ` (${waybill.tractorNumber})` : ""}
+                        </div>
+                      </div>
+                      <a href={`/api/waybills/${waybill.id}/print`} target="_blank" rel="noreferrer" className="agro-btn ghost compact" style={{ textDecoration: "none" }}>
+                        СП-31 ↗
+                      </a>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </section>
         </div>
       )}
+
+      <DealDeskModal
+        open={dealDeskOpen}
+        onClose={() => {
+          setDealDeskOpen(false);
+          setEditingDealId(null);
+        }}
+        editingDealId={editingDealId}
+        initialDeal={dealDeskInitial}
+        counterparties={counterparties}
+        specifications={specifications}
+        contracts={contracts}
+        saving={dealDeskSaving}
+        onSubmit={handleDealDeskSubmit}
+        onOpenCreateCounterparty={(role) => {
+          setCounterpartyForm({
+            ...emptyCounterpartyForm,
+            businessRole: role,
+          });
+          setCounterpartyFormOpen(true);
+        }}
+      />
 
       {counterpartyFormOpen && (
         <CounterpartyFormModal
@@ -952,6 +1382,7 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
             setEditingDealId(null);
           }}
           onSubmit={submitDeal}
+          onOpenSpecifications={() => showView("specifications")}
         />
       )}
 
@@ -1015,6 +1446,7 @@ function DealFormModal({
   onChange,
   onClose,
   onSubmit,
+  onOpenSpecifications,
 }: {
   form: DealFormState;
   editing: boolean;
@@ -1025,6 +1457,7 @@ function DealFormModal({
   onChange: (form: DealFormState) => void;
   onClose: () => void;
   onSubmit: () => void;
+  onOpenSpecifications?: () => void;
 }) {
   const setField = (key: Exclude<keyof DealFormState, "specificationIds">, value: string) => onChange({ ...form, [key]: value });
   const toggleSpecification = (id: number) => onChange({
@@ -1064,7 +1497,21 @@ function DealFormModal({
           <h3>Спецификации сделки</h3>
           <div className="agro-muted">Отметьте спецификации закупки и реализации. По ним сделка автоматически соберёт договоры и ТТН.</div>
           <div className="agro-specification-picker">
-            {!specifications.length ? <div className="agro-muted">Сначала создайте спецификации в соответствующем разделе.</div> : specifications.map((item) => {
+            {!specifications.length ? (
+              <div className="agro-muted">
+                Сначала создайте спецификации в{" "}
+                <button
+                  type="button"
+                  style={{ textDecoration: "underline", color: "var(--wheat)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  onClick={() => {
+                    onClose();
+                    onOpenSpecifications?.();
+                  }}
+                >
+                  разделе «Спецификации»
+                </button>.
+              </div>
+            ) : specifications.map((item) => {
               const contract = contracts.find((row) => row.contract.id === item.specification.contractId)?.contract;
               return (
                 <label key={item.specification.id} className="agro-specification-option">
@@ -1235,21 +1682,53 @@ function OrganizationProfileModal({
   );
 }
 
-function PageHead({ title, subtitle, action }: { title: string; subtitle: string; action?: string }) {
+function PageHead({
+  title,
+  subtitle,
+  action,
+  onAction,
+}: {
+  title: string;
+  subtitle: string;
+  action?: string;
+  onAction?: () => void;
+}) {
   return (
     <div className="agro-page-head">
       <div>
         <div className="agro-page-title">{title}</div>
         <div className="agro-page-sub">{subtitle}</div>
       </div>
-      {action && <button type="button" className="agro-btn">{action}</button>}
+      {action && (
+        <button type="button" className="agro-btn" onClick={onAction}>
+          {action}
+        </button>
+      )}
     </div>
   );
 }
 
-function Kpi({ tone, label, value, delta }: { tone: string; label: string; value: string; delta: string }) {
+function Kpi({
+  tone,
+  label,
+  value,
+  delta,
+  onClick,
+}: {
+  tone: string;
+  label: string;
+  value: string;
+  delta: string;
+  onClick?: () => void;
+}) {
   return (
-    <div className={`agro-kpi ${tone}`}>
+    <div
+      className={`agro-kpi ${tone}`}
+      style={onClick ? { cursor: "pointer" } : undefined}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
       <div className="agro-kpi-label">{label}</div>
       <div className="agro-kpi-val">{value}</div>
       <div className="agro-kpi-delta">{delta}</div>
@@ -1300,20 +1779,6 @@ const agroStyles = `
   font-family:var(--body);
 }
 .agro-prototype *{box-sizing:border-box;}
-.agro-login-screen{position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center; background:var(--soil);}
-.agro-login-box{width:380px; border-radius:16px; background:#fff; padding:44px 48px; text-align:center;}
-.agro-login-logo{font-family:var(--display); font-size:32px; color:var(--soil); margin-bottom:4px;}
-.agro-login-logo span,.agro-logo span{color:var(--wheat);}
-.agro-login-sub{font-size:12px; color:var(--soil-soft); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:32px;}
-.agro-form-row{margin-bottom:14px; text-align:left;}
-.agro-form-row label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--soil-soft); margin-bottom:5px;}
-.agro-form-row select{width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px; background:#fff;}
-.agro-role-cards{display:flex; gap:10px; margin-bottom:24px;}
-.agro-role-card{flex:1; border:2px solid var(--line); border-radius:10px; padding:14px 10px; cursor:pointer; text-align:center; background:#fff;}
-.agro-role-card.selected{border-color:var(--wheat); background:rgba(14,124,114,.07);}
-.agro-role-card .ri{font-size:22px; margin-bottom:6px;}
-.agro-role-card .rn{font-weight:700; color:var(--soil);}
-.agro-role-card .rd{font-size:11px; color:var(--soil-soft); margin-top:3px;}
 .agro-app{display:flex; min-height:100vh;}
 .agro-sidebar{width:230px; flex-shrink:0; background:var(--soil); color:var(--grain); padding:28px 18px; display:flex; flex-direction:column;}
 .agro-logo{font-family:var(--display); font-size:22px; font-weight:700; letter-spacing:.5px; color:var(--grain); margin-bottom:4px;}
@@ -1360,10 +1825,12 @@ const agroStyles = `
 .agro-dashboard-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px;}
 .agro-dashboard-grid .agro-panel{margin-bottom:20px;}
 .agro-document-list{display:grid;}
-.agro-document-row{display:grid; grid-template-columns:auto minmax(105px,.8fr) minmax(160px,2fr) auto; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px;}
+.agro-document-row{display:grid; grid-template-columns:120px 170px minmax(200px,1fr) 95px; align-items:center; gap:16px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px;}
 .agro-document-row:last-child{border-bottom:0;}
+.agro-document-row .agro-tag{text-align:center; display:inline-block; width:100%; box-sizing:border-box;}
+.agro-document-row strong{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--soil);}
 .agro-document-row span:not(.agro-tag){color:var(--soil-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-.agro-document-row time{color:var(--soil-soft); font-size:12px; white-space:nowrap;}
+.agro-document-row time{color:var(--soil-soft); font-size:12px; white-space:nowrap; text-align:right;}
 .agro-document-select{display:flex; flex-direction:column; gap:6px; max-width:520px; margin-bottom:16px; font-size:12px; font-weight:700; color:var(--soil-soft);}
 .agro-document-select select{width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#fff; color:var(--ink); font:13px var(--body);}
 .agro-deals-list{display:grid; gap:10px;}
@@ -1432,9 +1899,9 @@ const agroStyles = `
 .agro-status-badge.blacklisted{background:#FBE4E0; color:var(--rust);}
 .agro-status-badge.debtor{background:#FDEBD7; color:#B4560A;}
 .agro-tag{display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600; background:#EAF1E5; color:var(--leaf);}
-.agro-vat-badge{display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;}
+.agro-vat-badge{display:inline-block; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; text-align:center; min-width:38px;}
 .agro-vat-badge.vat{background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE;}
-.agro-vat-badge.no-vat{background:#FEF3C7; color:#B45309; border:1px solid #FDE68A;}
+.agro-vat-badge.no-vat{background:#F3F4F6; color:#4B5563; border:1px solid #E5E7EB;}
 .agro-filter-group{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px;}
 .agro-filter-group .agro-tabs{margin-bottom:0;}
 .agro-tabs-vat{border-bottom:0;}
@@ -1455,7 +1922,7 @@ const agroStyles = `
 .agro-dialog-kicker{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--soil-soft);}
 .agro-icon-button{border:1px solid var(--line); background:#fff; color:var(--soil); width:32px; height:32px; line-height:28px; font-size:22px; border-radius:6px; cursor:pointer; flex:0 0 auto;}
 .agro-card-actions{display:flex; justify-content:flex-end; padding:14px 0 0;}
-.agro-card-grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:14px;}
+.agro-card-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:14px;}
 .agro-detail-group{border:1px solid var(--line); border-radius:8px; padding:14px;}
 .agro-detail-group h3,.agro-form-section h3{font-family:var(--display); color:var(--soil); font-size:16px; margin:0 0 10px;}
 .agro-detail-item{padding:7px 0; border-bottom:1px solid #e8f0ed; display:flex; flex-direction:column; gap:2px; font-size:12px;}
