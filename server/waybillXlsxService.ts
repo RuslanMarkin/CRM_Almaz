@@ -14,7 +14,22 @@ interface ZipEntry {
   data: Buffer;
 }
 
-const TEMPLATE_PATH = path.join(process.cwd(), "server", "templates", "ttn-waybill-template.xlsx");
+function getTemplatePath(): string {
+  const candidates = [
+    path.join(process.cwd(), "server", "templates", "ttn-waybill-template.xlsx"),
+    path.join(__dirname, "..", "server", "templates", "ttn-waybill-template.xlsx"),
+    path.join(__dirname, "server", "templates", "ttn-waybill-template.xlsx"),
+    path.join(__dirname, "templates", "ttn-waybill-template.xlsx"),
+    path.join(process.cwd(), "dist", "templates", "ttn-waybill-template.xlsx"),
+    path.join(process.cwd(), "templates", "ttn-waybill-template.xlsx"),
+    path.resolve("server/templates/ttn-waybill-template.xlsx"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
+}
+
 const CRC_TABLE = makeCrcTable();
 
 function makeCrcTable(): number[] {
@@ -378,7 +393,7 @@ function updateSheet2(xml: string, data: WaybillPrintData): string {
 }
 
 export function generateWaybillXlsx(data: WaybillPrintData): Buffer {
-  const template = fs.readFileSync(TEMPLATE_PATH);
+  const template = fs.readFileSync(getTemplatePath());
   const entries = readZip(template);
 
   for (const entry of entries) {
