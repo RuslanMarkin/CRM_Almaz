@@ -25,6 +25,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
+COPY --from=build /app/server/templates ./server/templates
 
 EXPOSE 3000
 
