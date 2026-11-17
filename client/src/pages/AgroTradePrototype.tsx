@@ -5,8 +5,9 @@ import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
 import { toast } from "sonner";
-import { LogOut } from "lucide-react";
+import { Calculator, LogOut, Plus, Truck } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { DealDeskModal, type DealDeskSubmission } from "@/components/DealDeskModal";
 import Waybills from "./Waybills";
 import Contracts from "./Contracts";
 import Specifications from "./Specifications";
@@ -210,6 +211,9 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
   const [editingCounterpartyId, setEditingCounterpartyId] = useState<number | null>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
   const [dealFormOpen, setDealFormOpen] = useState(false);
+  const [dealDeskOpen, setDealDeskOpen] = useState(false);
+  const [dealDeskInitial, setDealDeskInitial] = useState<any>(undefined);
+  const [dealDeskSaving, setDealDeskSaving] = useState(false);
   const [editingDealId, setEditingDealId] = useState<number | null>(null);
   const [counterpartyForm, setCounterpartyForm] = useState<CounterpartyFormState>(emptyCounterpartyForm);
   const [organizationForm, setOrganizationForm] = useState<OrganizationFormState>(emptyOrganizationForm);
@@ -221,6 +225,9 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
   const { data: waybills = [] } = trpc.waybills.list.useQuery({});
   const { data: counterparties = [], isLoading: counterpartiesLoading } = trpc.counterparties.list.useQuery();
   const { data: organizationProfile } = trpc.organization.get.useQuery();
+
+  const createContractMutation = trpc.contracts.create.useMutation();
+  const createSpecificationMutation = trpc.specifications.create.useMutation();
 
   useEffect(() => {
     if (initialCounterpartyId) {
@@ -476,8 +483,8 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
 
   function openCreateDeal() {
     setEditingDealId(null);
-    setDealForm(emptyDealForm);
-    setDealFormOpen(true);
+    setDealDeskInitial(undefined);
+    setDealDeskOpen(true);
   }
 
   function openEditDeal(dealId: number) {
@@ -485,7 +492,9 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
     if (!model) return;
     const deal = model.deal;
     setEditingDealId(deal.id);
-    setDealForm({
+    const tariffMatch = deal.notes?.match(/Тариф перевозки:\s*(\d+(?:\.\d+)?)/i);
+    const carrierTariff = tariffMatch ? tariffMatch[1] : "1500";
+    setDealDeskInitial({
       number: deal.number,
       sellerId: String(deal.sellerId),
       buyerId: String(deal.buyerId),
@@ -495,6 +504,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
       plannedVolume: deal.plannedVolume ?? "",
       purchasePrice: deal.purchasePrice ?? "",
       salePrice: deal.salePrice ?? "",
+      carrierTariff,
       currency: deal.currency ?? "RUB",
       startDate: deal.startDate ? new Date(deal.startDate).toISOString().split("T")[0] : "",
       endDate: deal.endDate ? new Date(deal.endDate).toISOString().split("T")[0] : "",
@@ -503,7 +513,142 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
       specificationIds: model.linkedSpecifications.map((item) => item.specification.id),
     });
     setSelectedDealId(null);
-    setDealFormOpen(true);
+    setDealDeskOpen(true);
+  }
+
+  async function handleDealDeskSubmit(params: DealDeskSubmission) {
+    setDealDeskSaving(true);
+    try {
+      const dealData = {
+        number: params.deal.number,
+        sellerId: params.deal.sellerId,
+        buyerId: params.deal.buyerId,
+        carrierId: params.deal.carrierId,
+        cargoName: params.deal.cargoName,
+        cargoGrade: params.deal.cargoGrade,
+        plannedVolume: params.deal.plannedVolume,
+        purchasePrice: params.deal.purchasePrice,
+        salePrice: params.deal.salePrice,
+        currency: params.deal.currency,
+        startDate: params.deal.startDate ? new Date(params.deal.startDate) : undefined,
+        endDate: params.deal.endDate ? new Date(params.deal.endDate) : undefined,
+        status: params.deal.status,
+        notes: params.carrierTariff
+          ? `Тариф перевозки: ${params.carrierTariff} ₽/т. ${params.deal.notes || ""}`.trim()
+          : params.deal.notes,
+      };
+
+      const saved = editingDealId
+        ? await updateDeal.mutateAsync({ id: editingDealId, data: dealData })
+        : await createDeal.mutateAsync(dealData);
+      if (!saved) throw new Error("Не удалось сохранить сделку");
+
+      const dealId = saved.id;
+      const specIdsToLink = [...(params.specificationIds || [])];
+
+      // Auto-generate contracts and specifications if requested for new deal
+      if (params.autoGenerateDocuments && !editingDealId) {
+        const vol = Number(params.deal.plannedVolume) || 0;
+        const pPrice = Number(params.deal.purchasePrice) || 0;
+        const sPrice = Number(params.deal.salePrice) || 0;
+        const tPrice = Number(params.carrierTariff) || 0;
+
+        try {
+          // A. Purchase Contract & Specification
+          const pContract = await createContractMutation.mutateAsync({
+            number: `ДЗ-${params.deal.number}`,
+            counterpartyId: params.deal.sellerId,
+            contractKind: "purchase",
+            type: "framework",
+            subject: `Поставка зерна: ${params.deal.cargoName}`,
+            amount: vol && pPrice ? String(vol * pPrice) : undefined,
+            status: "active",
+          });
+
+          if (pContract?.contract?.id) {
+            const pSpec = await createSpecificationMutation.mutateAsync({
+              number: `СПЗ-${params.deal.number}`,
+              contractId: pContract.contract.id,
+              counterpartyId: params.deal.sellerId,
+              cargoName: params.deal.cargoName,
+              volumeTotal: params.deal.plannedVolume,
+              pricePerUnit: params.deal.purchasePrice,
+              loadingAddress: params.loadingAddress || undefined,
+              unloadingAddress: params.unloadingAddress || undefined,
+              status: "active",
+            });
+            if (pSpec?.specification?.id) {
+              specIdsToLink.push(pSpec.specification.id);
+            }
+          }
+
+          // B. Sale Contract & Specification
+          const sContract = await createContractMutation.mutateAsync({
+            number: `ДП-${params.deal.number}`,
+            counterpartyId: params.deal.buyerId,
+            contractKind: "sale",
+            type: "framework",
+            subject: `Реализация зерна: ${params.deal.cargoName}`,
+            amount: vol && sPrice ? String(vol * sPrice) : undefined,
+            status: "active",
+          });
+
+          if (sContract?.contract?.id) {
+            const sSpec = await createSpecificationMutation.mutateAsync({
+              number: `СПП-${params.deal.number}`,
+              contractId: sContract.contract.id,
+              counterpartyId: params.deal.buyerId,
+              cargoName: params.deal.cargoName,
+              volumeTotal: params.deal.plannedVolume,
+              pricePerUnit: params.deal.salePrice,
+              loadingAddress: params.loadingAddress || undefined,
+              unloadingAddress: params.unloadingAddress || undefined,
+              status: "active",
+            });
+            if (sSpec?.specification?.id) {
+              specIdsToLink.push(sSpec.specification.id);
+            }
+          }
+
+          // C. Carriage Contract (if carrier assigned)
+          if (params.deal.carrierId) {
+            await createContractMutation.mutateAsync({
+              number: `ДЛ-${params.deal.number}`,
+              counterpartyId: params.deal.carrierId,
+              contractKind: "carriage",
+              type: "service",
+              subject: `Перевозка зерна: ${params.deal.cargoName}`,
+              amount: vol && tPrice ? String(vol * tPrice) : undefined,
+              status: "active",
+            });
+          }
+        } catch (docErr) {
+          console.error("Auto doc generation error:", docErr);
+          toast.error("Сделка создана, но часть документов не сформировалась автоматически");
+        }
+      }
+
+      // Link specifications to deal
+      if (specIdsToLink.length > 0) {
+        await syncDealSpecifications(dealId, specIdsToLink);
+      }
+
+      await Promise.all([
+        utils.deals.list.invalidate(),
+        utils.contracts.list.invalidate(),
+        utils.specifications.list.invalidate(),
+        utils.dashboard.stats.invalidate(),
+      ]);
+
+      setDealDeskOpen(false);
+      setEditingDealId(null);
+      setSelectedDealId(dealId);
+      toast.success(editingDealId ? "Сделка обновлена" : "Сделка запущена! Документы сформированы.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить сделку");
+    } finally {
+      setDealDeskSaving(false);
+    }
   }
 
   async function syncDealSpecifications(dealId: number, specificationIds: number[]) {
@@ -633,7 +778,12 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
         <main className="agro-main">
           {activeView === "dashboard" && (
             <section className="agro-view">
-              <PageHead title="Дашборд" subtitle="Оперативная сводка по внесённым договорам, спецификациям и ТТН" />
+              <PageHead
+                title="Дашборд"
+                subtitle="Оперативная сводка по внесённым договорам, спецификациям и ТТН"
+                action="⚡ Провести сделку (Deal Desk)"
+                onAction={openCreateDeal}
+              />
               <div className="agro-kpi-row">
                 <Kpi tone="wheat" label="Активные договоры" value={String(dashboardData.activeContracts)} delta={`Всего: ${contracts.length}`} onClick={() => showView("contracts")} />
                 <Kpi tone="leaf" label="Спецификации в работе" value={String(dashboardData.openSpecifications)} delta={`Остаток: ${formatTons(dashboardData.remainingVolume)}`} onClick={() => showView("specifications")} />
@@ -686,9 +836,11 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               <div className="agro-page-head">
                 <div>
                   <div className="agro-page-title">Сделки</div>
-                  <div className="agro-page-sub">Карточка объединяет условия, договоры, спецификации, ТТН и контроль фактического веса</div>
+                  <div className="agro-page-sub">Единый центр: связка закупки, логистики, реализации, ТТН и контроль маржи M</div>
                 </div>
-                <button type="button" className="agro-btn" onClick={openCreateDeal}>＋ Новая сделка</button>
+                <button type="button" className="agro-btn" onClick={openCreateDeal}>
+                  ⚡ Новая сделка (Deal Desk)
+                </button>
               </div>
               {dealsLoading ? <Panel><div className="agro-muted">Загрузка сделок...</div></Panel> : !dealViewModels.length ? (
                 <Panel title="Сделок пока нет">
@@ -1043,7 +1195,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
         </div>
       )}
 
-      {selectedDeal && !dealFormOpen && (
+      {selectedDeal && !dealDeskOpen && !dealFormOpen && (
         <div className="agro-dialog-backdrop" role="presentation" onMouseDown={() => setSelectedDealId(null)}>
           <section className="agro-dialog agro-deal-dialog" role="dialog" aria-modal="true" aria-label="Карточка сделки" onMouseDown={(event) => event.stopPropagation()}>
             <div className="agro-dialog-head">
@@ -1055,8 +1207,48 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               <button type="button" className="agro-icon-button" onClick={() => setSelectedDealId(null)} aria-label="Закрыть карточку" title="Закрыть">×</button>
             </div>
             <div className="agro-card-actions">
-              <button type="button" className="agro-btn ghost small" onClick={() => openEditDeal(selectedDeal.deal.id)}>Редактировать</button>
+              <button type="button" className="agro-btn ghost small" onClick={() => openEditDeal(selectedDeal.deal.id)}>Редактировать в Deal Desk</button>
             </div>
+
+            {/* Formula M Banner */}
+            {(() => {
+              const pPrice = Number(selectedDeal.deal.purchasePrice) || 0;
+              const sPrice = Number(selectedDeal.deal.salePrice) || 0;
+              const vol = Number(selectedDeal.deal.plannedVolume) || 0;
+              const tariffMatch = selectedDeal.deal.notes?.match(/Тариф перевозки:\s*(\d+(?:\.\d+)?)/i);
+              const cTariff = tariffMatch ? Number(tariffMatch[1]) : 1500;
+              const mPerTon = sPrice - pPrice - cTariff;
+              const planProfit = mPerTon * vol;
+              const isProfit = mPerTon > 0;
+              return (
+                <div
+                  style={{
+                    background: isProfit ? "#F0FDF4" : "#FEF2F2",
+                    border: `1.5px solid ${isProfit ? "#86EFAC" : "#FCA5A5"}`,
+                    borderRadius: "10px",
+                    padding: "14px 18px",
+                    margin: "14px 0",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <strong style={{ fontSize: "12px", color: "var(--soil)", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Calculator size={15} style={{ color: "var(--wheat)" }} />
+                      ФОРМУЛА МАРЖИ: M = (Дог П. - ТТН - Дог З.) / Тонн
+                    </strong>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: isProfit ? "#15803D" : "#DC2626" }}>
+                      Маржа M: {mPerTon >= 0 ? "+" : ""}{mPerTon.toLocaleString("ru-RU")} ₽/т
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", fontSize: "12px" }}>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ВЫРУЧКА (П)</span><br /><b>{(vol * sPrice).toLocaleString("ru-RU")} ₽</b></div>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ЗАКУПКА (З)</span><br /><b>{(vol * pPrice).toLocaleString("ru-RU")} ₽</b></div>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ПЕРЕВОЗКА (ТТН)</span><br /><b>{(vol * cTariff).toLocaleString("ru-RU")} ₽</b></div>
+                    <div><span style={{ color: "var(--soil-soft)", fontSize: "10.5px" }}>ПЛАНОВАЯ ПРИБЫЛЬ</span><br /><b style={{ color: isProfit ? "#15803D" : "#DC2626" }}>{planProfit >= 0 ? "+" : ""}{planProfit.toLocaleString("ru-RU")} ₽</b></div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="agro-deal-summary">
               <DetailItem label="Продавец" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.sellerId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.sellerId)?.name} />
               <DetailItem label="Покупатель" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.buyerId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.buyerId)?.name} />
@@ -1078,11 +1270,25 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               </div>
             </div>
             <div className="agro-deal-section">
-              <h3>Связанные документы</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h3 style={{ margin: 0 }}>Рейсы и товарно-транспортные накладные</h3>
+                <button
+                  type="button"
+                  className="agro-btn small"
+                  style={{ gap: "6px" }}
+                  onClick={() => {
+                    setSelectedDealId(null);
+                    showView("ttn");
+                  }}
+                >
+                  <Truck size={13} />
+                  ＋ Оформить ТТН
+                </button>
+              </div>
               <div className="agro-linked-documents">
                 <div><span>Договоров</span><b>{selectedDeal.linkedContracts.length}</b></div>
                 <div><span>Спецификаций</span><b>{selectedDeal.linkedSpecifications.length}</b></div>
-                <div><span>ТТН</span><b>{selectedDeal.linkedWaybills.length}</b></div>
+                <div><span>Всего ТТН</span><b>{selectedDeal.linkedWaybills.length}</b></div>
                 <div><span>Закрыто ТТН</span><b>{selectedDeal.linkedWaybills.filter((waybill) => waybill.status === "delivered").length}</b></div>
               </div>
               {!selectedDeal.linkedSpecifications.length ? <div className="agro-muted">Привяжите спецификации в режиме редактирования: по ним в сделку попадут договоры и ТТН.</div> : (
@@ -1109,6 +1315,28 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
           </section>
         </div>
       )}
+
+      <DealDeskModal
+        open={dealDeskOpen}
+        onClose={() => {
+          setDealDeskOpen(false);
+          setEditingDealId(null);
+        }}
+        editingDealId={editingDealId}
+        initialDeal={dealDeskInitial}
+        counterparties={counterparties}
+        specifications={specifications}
+        contracts={contracts}
+        saving={dealDeskSaving}
+        onSubmit={handleDealDeskSubmit}
+        onOpenCreateCounterparty={(role) => {
+          setCounterpartyForm({
+            ...emptyCounterpartyForm,
+            businessRole: role,
+          });
+          setCounterpartyFormOpen(true);
+        }}
+      />
 
       {counterpartyFormOpen && (
         <CounterpartyFormModal
@@ -1438,14 +1666,28 @@ function OrganizationProfileModal({
   );
 }
 
-function PageHead({ title, subtitle, action }: { title: string; subtitle: string; action?: string }) {
+function PageHead({
+  title,
+  subtitle,
+  action,
+  onAction,
+}: {
+  title: string;
+  subtitle: string;
+  action?: string;
+  onAction?: () => void;
+}) {
   return (
     <div className="agro-page-head">
       <div>
         <div className="agro-page-title">{title}</div>
         <div className="agro-page-sub">{subtitle}</div>
       </div>
-      {action && <button type="button" className="agro-btn">{action}</button>}
+      {action && (
+        <button type="button" className="agro-btn" onClick={onAction}>
+          {action}
+        </button>
+      )}
     </div>
   );
 }
