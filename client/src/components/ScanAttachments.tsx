@@ -4,8 +4,16 @@ import { Download, Eye, Paperclip, Trash2, Upload } from "lucide-react";
 import { useRef } from "react";
 import { toast } from "sonner";
 
-type AttachmentEntityType = "contract" | "specification" | "counterparty" | "organization";
-type AttachmentDocumentKind = "contract_scan" | "specification_scan" | "statutory_document" | "other";
+export type AttachmentEntityType = "contract" | "specification" | "counterparty" | "organization";
+export type AttachmentDocumentKind = "contract_scan" | "specification_scan" | "statutory_document" | "other";
+
+export interface StagedAttachment {
+  id: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  dataUrl: string;
+}
 
 interface ScanAttachmentsProps {
   entityType: AttachmentEntityType;
@@ -14,6 +22,8 @@ interface ScanAttachmentsProps {
   specificationId?: number | null;
   title?: string;
   compact?: boolean;
+  stagedFiles?: StagedAttachment[];
+  onStagedFilesChange?: (files: StagedAttachment[]) => void;
 }
 
 const acceptedScanTypes = ".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx";
@@ -40,10 +50,13 @@ export function ScanAttachments({
   specificationId,
   title = "Сканы",
   compact = false,
+  stagedFiles,
+  onStagedFilesChange,
 }: ScanAttachmentsProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const utils = trpc.useUtils();
   const enabled = Boolean(entityId);
+  const canAttach = Boolean(entityId || onStagedFilesChange);
 
   const { data: attachments = [], isLoading } = trpc.attachments.list.useQuery(
     {
@@ -73,23 +86,37 @@ export function ScanAttachments({
   });
 
   async function handleFile(file?: File) {
-    if (!file || !entityId) return;
+    if (!file) return;
+    if (!entityId && !onStagedFilesChange) return;
     if (file.size > maxSize) {
       toast.error("Файл слишком большой. Максимум 15 МБ");
       return;
     }
     try {
       const dataUrl = await readAsDataUrl(file);
-      createMutation.mutate({
-        entityType,
-        entityId,
-        documentKind,
-        specificationId: specificationId ?? undefined,
-        fileName: file.name,
-        contentType: file.type || "application/octet-stream",
-        size: file.size,
-        dataUrl,
-      });
+      if (entityId) {
+        createMutation.mutate({
+          entityType,
+          entityId,
+          documentKind,
+          specificationId: specificationId ?? undefined,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl,
+        });
+      } else if (onStagedFilesChange) {
+        const newStaged: StagedAttachment = {
+          id: `staged-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl,
+        };
+        onStagedFilesChange([...(stagedFiles ?? []), newStaged]);
+        toast.success("Скан добавлен в список");
+        if (inputRef.current) inputRef.current.value = "";
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось прикрепить файл";
       toast.error(message);
@@ -113,6 +140,8 @@ export function ScanAttachments({
     return attachment.dataUrl ?? `/api/attachments/${attachment.id}/file`;
   }
 
+  const stagedCount = stagedFiles?.length ?? 0;
+
   return (
     <div className={compact ? "rounded-lg border border-border p-3" : "rounded-xl border border-border p-4"}>
       <div className="flex items-center justify-between gap-3">
@@ -121,7 +150,13 @@ export function ScanAttachments({
           <div>
             <p className="text-sm font-semibold text-foreground">{title}</p>
             <p className="text-xs text-muted-foreground">
-              {enabled ? `${attachments.length} файл(ов)` : "Сохраните запись, чтобы прикрепить скан"}
+              {enabled
+                ? `${attachments.length} файл(ов)`
+                : onStagedFilesChange
+                ? stagedCount > 0
+                  ? `${stagedCount} файл(ов) (будут сохранены при создании)`
+                  : "Прикрепите скан перед сохранением"
+                : "Сохраните запись, чтобы прикрепить скан"}
             </p>
           </div>
         </div>
@@ -130,7 +165,7 @@ export function ScanAttachments({
           variant="outline"
           size="sm"
           className="gap-2"
-          disabled={!enabled || createMutation.isPending}
+          disabled={!canAttach || createMutation.isPending}
           onClick={() => inputRef.current?.click()}
         >
           <Upload className="h-4 w-4" />
@@ -145,7 +180,7 @@ export function ScanAttachments({
         />
       </div>
 
-      {enabled && (
+      {enabled ? (
         <div className="mt-3 space-y-2">
           {isLoading ? (
             <p className="text-xs text-muted-foreground">Загрузка сканов...</p>
@@ -155,43 +190,83 @@ export function ScanAttachments({
             attachments.map((attachment) => {
               const attachmentUrl = getAttachmentUrl(attachment);
               return (
-              <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{attachment.fileName}</p>
-                  <p className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</p>
+                <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{attachment.fileName}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                      onClick={() => openAttachment(attachmentUrl, attachment.fileName)}
+                      title="Открыть"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <a
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                      href={attachmentUrl}
+                      download={attachment.fileName}
+                      title="Скачать"
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-destructive"
+                      onClick={() => deleteMutation.mutate({ id: attachment.id })}
+                      title="Удалить"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
-                    onClick={() => openAttachment(attachmentUrl, attachment.fileName)}
-                    title="Открыть"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <a
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
-                    href={attachmentUrl}
-                    download={attachment.fileName}
-                    title="Скачать"
-                  >
-                    <Download className="h-4 w-4" />
-                  </a>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-destructive"
-                    onClick={() => deleteMutation.mutate({ id: attachment.id })}
-                    title="Удалить"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
               );
             })
           )}
         </div>
-      )}
+      ) : onStagedFilesChange && stagedCount > 0 ? (
+        <div className="mt-3 space-y-2">
+          {stagedFiles!.map((attachment) => (
+            <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">{attachment.fileName}</p>
+                <p className="text-xs text-muted-foreground">{formatFileSize(attachment.size)} (будет сохранён)</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                  onClick={() => openAttachment(attachment.dataUrl, attachment.fileName)}
+                  title="Открыть"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <a
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                  href={attachment.dataUrl}
+                  download={attachment.fileName}
+                  title="Скачать"
+                >
+                  <Download className="h-4 w-4" />
+                </a>
+                <button
+                  type="button"
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-destructive"
+                  onClick={() => {
+                    onStagedFilesChange(stagedFiles!.filter((item) => item.id !== attachment.id));
+                    toast.success("Скан удалён");
+                  }}
+                  title="Удалить"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

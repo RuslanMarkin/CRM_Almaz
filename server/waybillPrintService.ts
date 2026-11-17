@@ -113,6 +113,20 @@ function calculateAmount(waybill: Waybill): string {
   return formatNumber(net * price, 2);
 }
 
+function formatBasisLine(contract?: Contract | null, specification?: Specification | null): string {
+  const parts: string[] = [];
+  const isCarriage = contract?.contractKind === "carriage";
+  if (contract?.number) {
+    const contractPrefix = isCarriage ? "Договор перевозки" : "Договор";
+    parts.push(`${contractPrefix} № ${contract.number}${contract.startDate ? ` от ${formatDate(contract.startDate)}` : ""}`);
+  }
+  if (specification?.number) {
+    const specPrefix = isCarriage ? "Заявка" : "Спецификация";
+    parts.push(`${specPrefix} № ${specification.number}${specification.startDate ? ` от ${formatDate(specification.startDate)}` : ""}`);
+  }
+  return parts.join(", ");
+}
+
 export function generateWaybillPrintHtml(data: WaybillPrintData): string {
   const { waybill, supplier, buyer, carrier, vehicleOwner, payer } = data;
   const shipperLine = partyLine(supplier, waybill.supplierName);
@@ -407,7 +421,7 @@ export function generateWaybillPrintHtml(data: WaybillPrintData): string {
       </div>
       <div class="attachment">
         <div>Приложение</div>
-        <div><div class="underline red">${text(waybill.declarationInfo)}</div><div class="caption">(свидетельство, паспорт, сертификаты и т.д.)</div></div>
+        <div><div class="underline red">${text([formatBasisLine(data.contract, data.specification), waybill.declarationInfo].filter(Boolean).join("; "))}</div><div class="caption">(договор, спецификация, свидетельство, паспорт, сертификаты и т.д.)</div></div>
         <div>на</div>
         <div><span class="underline" style="display:inline-block;width:12mm">&nbsp;</span> листах</div>
       </div>

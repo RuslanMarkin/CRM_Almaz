@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { SPEC_STATUSES, formatDate, formatCurrency, formatVolume } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ScanAttachments } from "@/components/ScanAttachments";
+import { ScanAttachments, type StagedAttachment } from "@/components/ScanAttachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,6 +79,8 @@ export default function Specifications() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [stagedScans, setStagedScans] = useState<StagedAttachment[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAutoOpenedCreate, setHasAutoOpenedCreate] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const utils = trpc.useUtils();
@@ -93,15 +95,10 @@ export default function Specifications() {
   const { data: counterparties } = trpc.counterparties.list.useQuery({});
 
   const createMutation = trpc.specifications.create.useMutation({
-    onSuccess: () => {
-      utils.specifications.list.invalidate();
-      utils.dashboard.stats.invalidate();
-      setDialogOpen(false);
-      setForm(emptyForm);
-      toast.success("Спецификация создана");
-    },
     onError: (e) => toast.error(e.message),
   });
+
+  const createAttachmentMutation = trpc.attachments.create.useMutation();
 
   const updateMutation = trpc.specifications.update.useMutation({
     onSuccess: () => {
@@ -132,6 +129,7 @@ export default function Specifications() {
 
   function openCreate() {
     setEditId(null);
+    setStagedScans([]);
     setForm(emptyForm);
     setDialogOpen(true);
   }
@@ -139,6 +137,7 @@ export default function Specifications() {
   function openEdit(row: any) {
     const s = row.specification;
     setEditId(s.id);
+    setStagedScans([]);
     setForm({
       number: s.number ?? "",
       contractId: String(s.contractId ?? ""),
@@ -159,13 +158,14 @@ export default function Specifications() {
     setDialogOpen(true);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!form.number.trim()) { toast.error("Укажите номер спецификации"); return; }
     if (!form.contractId) { toast.error("Выберите договор"); return; }
     if (!form.counterpartyId) { toast.error("Выберите контрагента"); return; }
+    const contractIdNum = parseInt(form.contractId);
     const data = {
       ...form,
-      contractId: parseInt(form.contractId),
+      contractId: contractIdNum,
       counterpartyId: parseInt(form.counterpartyId),
       startDate: form.startDate ? new Date(form.startDate) : undefined,
       endDate: form.endDate ? new Date(form.endDate) : undefined,
@@ -175,7 +175,40 @@ export default function Specifications() {
     if (editId) {
       updateMutation.mutate({ id: editId, data });
     } else {
-      createMutation.mutate(data);
+      setIsSubmitting(true);
+      try {
+        const created = await createMutation.mutateAsync(data);
+        const specId = created?.specification?.id;
+        if (stagedScans.length > 0) {
+          for (const scan of stagedScans) {
+            try {
+              await createAttachmentMutation.mutateAsync({
+                entityType: "contract",
+                entityId: contractIdNum,
+                specificationId: specId,
+                documentKind: "specification_scan",
+                fileName: scan.fileName,
+                contentType: scan.contentType,
+                size: scan.size,
+                dataUrl: scan.dataUrl,
+              });
+            } catch (err) {
+              console.error("Failed to upload scan", err);
+              toast.error(`Не удалось сохранить скан ${scan.fileName}`);
+            }
+          }
+        }
+        utils.specifications.list.invalidate();
+        utils.dashboard.stats.invalidate();
+        setDialogOpen(false);
+        setForm(emptyForm);
+        setStagedScans([]);
+        toast.success("Спецификация создана");
+      } catch (e: any) {
+        toast.error(e?.message || "Ошибка при создании спецификации");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   }
 
@@ -383,7 +416,16 @@ export default function Specifications() {
       </div>
 
       {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditId(null);
+            setStagedScans([]);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editId ? "Редактировать спецификацию" : "Новая спецификация"}</DialogTitle>
@@ -500,16 +542,30 @@ export default function Specifications() {
 
             <ScanAttachments
               entityType="contract"
-              entityId={form.contractId ? Number(form.contractId) : null}
+              entityId={editId ? (form.contractId ? Number(form.contractId) : null) : null}
               documentKind="specification_scan"
               specificationId={editId}
               title="Скан спецификации в договоре"
+              stagedFiles={stagedScans}
+              onStagedFilesChange={setStagedScans}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Отмена</Button>
-            <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-              {editId ? "Сохранить" : "Создать"}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDialogOpen(false);
+                setEditId(null);
+                setStagedScans([]);
+              }}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
+            >
+              {isSubmitting ? "Сохранение..." : editId ? "Сохранить" : "Создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -218,7 +218,9 @@ export async function getContractById(id: number) {
 export async function createContract(data: InsertContract) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(contracts).values(data);
+  const result = await db.insert(contracts).values(data);
+  const insertId = Number(result[0].insertId);
+  return getContractById(insertId);
 }
 
 export async function updateContract(id: number, data: Partial<InsertContract>) {
@@ -338,7 +340,9 @@ export async function getSpecificationById(id: number) {
 export async function createSpecification(data: InsertSpecification) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(specifications).values(data);
+  const result = await db.insert(specifications).values(data);
+  const insertId = Number(result[0].insertId);
+  return getSpecificationById(insertId);
 }
 
 export async function updateSpecification(id: number, data: Partial<InsertSpecification>) {

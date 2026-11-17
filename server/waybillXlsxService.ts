@@ -277,20 +277,31 @@ function formatPersonSignatureName(value: string | null | undefined): string {
 }
 
 function basisLine(data: WaybillPrintData): string {
-  const contract = data.contract
-    ? [
-        `Договор № ${data.contract.number}`,
+  const parts: string[] = [];
+  const isCarriage = data.contract?.contractKind === "carriage";
+  if (data.contract?.number) {
+    const contractPrefix = isCarriage ? "Договор перевозки" : "Договор";
+    parts.push(
+      [
+        `${contractPrefix} № ${data.contract.number}`,
         data.contract.startDate ? `от ${formatDate(data.contract.startDate)}` : null,
-      ].filter(Boolean).join(" ")
-    : "Договор №";
-  const specification = data.specification
-    ? [
-        `Спец (при наличии) № ${data.specification.number}`,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+  if (data.specification?.number) {
+    const specPrefix = isCarriage ? "Заявка" : "Спецификация";
+    parts.push(
+      [
+        `${specPrefix} № ${data.specification.number}`,
         data.specification.startDate ? `от ${formatDate(data.specification.startDate)}` : null,
-      ].filter(Boolean).join(" ")
-    : "Спец (при наличии) №";
-
-  return `${contract}. ${specification}`;
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+  return parts.join(", ");
 }
 
 function formatFormNumber(value: string): string {
@@ -348,7 +359,7 @@ function updateSheet1(xml: string, data: WaybillPrintData): string {
     AJ63: "",
     BX63: "",
     CK63: formatPersonSignatureName(waybill.driverName),
-    N65: waybill.declarationInfo,
+    N65: [basisLine(data), waybill.declarationInfo].filter(Boolean).join("; "),
   };
 
   const sheetWithValues = Object.entries(values).reduce((sheet, [cell, value]) => setCellValue(sheet, cell, value), xml);

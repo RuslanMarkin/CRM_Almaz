@@ -15,8 +15,6 @@ import AgroTradePrototype from "./pages/AgroTradePrototype";
 import Login from "./pages/Login";
 import RecycleBin from "./pages/RecycleBin";
 import { useAuth } from "./_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
 
 function Router() {
   return (
@@ -33,23 +31,48 @@ function Router() {
       <Route path="/waybills">
         <AgroTradePrototype initialView="ttn" />
       </Route>
+      <Route path="/contracts">
+        <AgroTradePrototype initialView="contracts" />
+      </Route>
+      <Route path="/specifications">
+        <AgroTradePrototype initialView="specifications" />
+      </Route>
 
+      <Route path="/deals">
+        <AgroTradePrototype initialView="deals" />
+      </Route>
       <Route path="/counterparties">
+        <AgroTradePrototype initialView="contractors" />
+      </Route>
+      <Route path="/contractors">
+        <AgroTradePrototype initialView="contractors" />
+      </Route>
+      <Route path="/counterparties/:id">
+        {(params) => (
+          <AgroTradePrototype initialView="contractors" initialCounterpartyId={parseInt(params.id, 10)} />
+        )}
+      </Route>
+      <Route path="/contractors/:id">
+        {(params) => (
+          <AgroTradePrototype initialView="contractors" initialCounterpartyId={parseInt(params.id, 10)} />
+        )}
+      </Route>
+      <Route path="/legacy-counterparties">
         <AppLayout>
           <Counterparties />
         </AppLayout>
       </Route>
-      <Route path="/counterparties/:id">
+      <Route path="/legacy-counterparties/:id">
         <AppLayout>
           <CounterpartyDetail />
         </AppLayout>
       </Route>
-      <Route path="/contracts">
+      <Route path="/legacy-contracts">
         <AppLayout>
           <Contracts />
         </AppLayout>
       </Route>
-      <Route path="/specifications">
+      <Route path="/legacy-specifications">
         <AppLayout>
           <Specifications />
         </AppLayout>
@@ -76,7 +99,7 @@ function Router() {
 }
 
 function App() {
-  const { isAuthenticated, loading, logout } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
 
   return (
     <ErrorBoundary>
@@ -84,26 +107,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           {loading ? <main className="min-h-screen bg-muted/30" /> : isAuthenticated ? (
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                className="fixed right-28 top-4 z-[100] bg-background/95"
-                onClick={() => { window.location.href = "/recycle-bin"; }}
-              >
-                Корзина
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="fixed right-4 top-4 z-[100] bg-background/95"
-                onClick={() => void logout()}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Выйти
-              </Button>
-              <Router />
-            </div>
+            <Router />
           ) : <Login />}
         </TooltipProvider>
       </ThemeProvider>
