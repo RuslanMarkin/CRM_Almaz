@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { ScanAttachments } from "@/components/ScanAttachments";
-import { StatutoryDocumentsSection } from "@/components/StatutoryDocumentsSection";
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
@@ -1097,13 +1096,6 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                 <DetailItem label="Расчётный счёт" value={selectedCounterparty.bankAccount} />
                 <DetailItem label="Корр. счёт" value={selectedCounterparty.corrAccount} />
               </div>
-            </div>
-            <div className="agro-counterparty-statutory-wrap">
-              <StatutoryDocumentsSection
-                counterpartyId={selectedCounterparty.id}
-                vatType={selectedCounterparty.vatType as CounterpartyVatType}
-                counterpartyName={selectedCounterparty.shortName || selectedCounterparty.name}
-              />
             </div>
             <div className="agro-counterparty-scans">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
