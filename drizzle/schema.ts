@@ -131,6 +131,7 @@ export const specifications = mysqlTable("specifications", {
   unloadingAddress: text("unloadingAddress"),
   cargoName: varchar("cargoName", { length: 512 }),
   pricePerUnit: decimal("pricePerUnit", { precision: 15, scale: 2 }),
+  vatRate: varchar("vatRate", { length: 16 }).default("10"),
   unit: varchar("unit", { length: 32 }).default("т"),
   currency: varchar("currency", { length: 3 }).default("RUB"),
   volumeTotal: decimal("volumeTotal", { precision: 15, scale: 3 }),

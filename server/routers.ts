@@ -134,6 +134,7 @@ const specificationInput = z.object({
   endDate: z.date().optional(),
   status: z.enum(["draft", "active", "completed", "cancelled"]).default("draft"),
   notes: z.string().optional(),
+  vatRate: z.string().optional(),
 });
 
 const dealInput = z.object({

@@ -49,6 +49,7 @@ interface FormState {
   endDate: string;
   status: SpecStatus;
   notes: string;
+  vatRate: string;
 }
 
 const emptyForm: FormState = {
@@ -67,6 +68,7 @@ const emptyForm: FormState = {
   endDate: "",
   status: "draft",
   notes: "",
+  vatRate: "10",
 };
 
 export default function Specifications() {
@@ -154,6 +156,7 @@ export default function Specifications() {
       endDate: s.endDate ? new Date(s.endDate).toISOString().split("T")[0] : "",
       status: s.status ?? "draft",
       notes: s.notes ?? "",
+      vatRate: s.vatRate ?? "10",
     });
     setDialogOpen(true);
   }
@@ -171,6 +174,7 @@ export default function Specifications() {
       endDate: form.endDate ? new Date(form.endDate) : undefined,
       pricePerUnit: form.pricePerUnit || undefined,
       volumeTotal: form.volumeTotal || undefined,
+      vatRate: form.vatRate || "10",
     };
     if (editId) {
       updateMutation.mutate({ id: editId, data });
@@ -236,6 +240,15 @@ export default function Specifications() {
     setDialogOpen(true);
     setHasAutoOpenedCreate(true);
   }, [hasAutoOpenedCreate, preselectedCounterpartyId, shouldAutoOpenCreate]);
+
+  const numPrice = Number(form.pricePerUnit) || 0;
+  const numVolume = Number(form.volumeTotal) || 0;
+  const numVatRate = Number(form.vatRate) || 0;
+  const vatPerUnit = numPrice * (numVatRate / 100);
+  const priceWithVat = numPrice + vatPerUnit;
+  const totalWithoutVat = numVolume * numPrice;
+  const totalVat = numVolume * vatPerUnit;
+  const totalWithVat = numVolume * priceWithVat;
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
@@ -334,9 +347,16 @@ export default function Specifications() {
                       <div>
                         <p className="text-sm text-foreground">{spec.cargoName ?? "—"}</p>
                         {spec.pricePerUnit && (
-                          <p className="text-xs text-muted-foreground">
-                            {formatCurrency(spec.pricePerUnit)} / {spec.unit}
-                          </p>
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">{formatCurrency(spec.pricePerUnit)} / {spec.unit} (без НДС)</span>
+                            {Number((spec as any).vatRate ?? 0) > 0 ? (
+                              <span className="text-emerald-700 font-medium block text-[11.5px]">
+                                {formatCurrency(Number(spec.pricePerUnit) * (1 + Number((spec as any).vatRate) / 100))} (с НДС {(spec as any).vatRate}%)
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 block text-[11px]">Без НДС</span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -503,10 +523,112 @@ export default function Specifications() {
                   <Label>Единица</Label>
                   <Input value={form.unit} onChange={f("unit")} placeholder="т" className="mt-1" />
                 </div>
-                <div>
-                  <Label>Цена за единицу</Label>
-                  <Input value={form.pricePerUnit} onChange={f("pricePerUnit")} placeholder="0.00" type="number" className="mt-1" />
+                <div className="col-span-3">
+                  <Label>Цена за единицу (без НДС), ₽</Label>
+                  <Input value={form.pricePerUnit} onChange={f("pricePerUnit")} placeholder="0.00" type="number" step="any" className="mt-1" />
                 </div>
+              </div>
+
+              {/* Плашка НДС с автоматическим пересчётом */}
+              <div className="mt-3 rounded-lg border border-amber-300/80 bg-amber-50/70 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-950">
+                      Ставка НДС
+                    </span>
+                    <span className="text-[11px] text-amber-800">
+                      (выберите процент или укажите свой):
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { label: "Без НДС (0%)", value: "0" },
+                      { label: "5%", value: "5" },
+                      { label: "10%", value: "10" },
+                      { label: "20%", value: "20" },
+                      { label: "22%", value: "22" },
+                    ].map((rate) => (
+                      <button
+                        type="button"
+                        key={rate.value}
+                        onClick={() => setForm((prev) => ({ ...prev, vatRate: rate.value }))}
+                        className={`text-xs px-2.5 py-1 rounded-md font-semibold transition-all border ${
+                          form.vatRate === rate.value
+                            ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                            : "bg-white text-amber-950 border-amber-300 hover:bg-amber-100"
+                        }`}
+                      >
+                        {rate.label}
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-amber-300">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        max="100"
+                        value={form.vatRate}
+                        onChange={(e) => setForm((prev) => ({ ...prev, vatRate: e.target.value }))}
+                        placeholder="%"
+                        className="w-12 text-xs font-semibold text-amber-950 outline-none bg-transparent"
+                      />
+                      <span className="text-xs font-bold text-amber-800">%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Автоматический пересчёт стоимости */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-amber-200 text-xs">
+                  <div className="bg-white/95 p-2 rounded border border-amber-200">
+                    <div className="text-muted-foreground text-[10.5px] uppercase">Цена без НДС:</div>
+                    <div className="font-bold text-slate-800 text-sm mt-0.5">
+                      {numPrice > 0 ? `${numPrice.toLocaleString("ru-RU")} ₽/т` : "0.00 ₽"}
+                    </div>
+                  </div>
+                  <div className="bg-white/95 p-2 rounded border border-amber-200">
+                    <div className="text-muted-foreground text-[10.5px] uppercase">
+                      НДС ({numVatRate}%):
+                    </div>
+                    <div className="font-bold text-amber-800 text-sm mt-0.5">
+                      {numPrice > 0 && numVatRate > 0
+                        ? `+${vatPerUnit.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽/т`
+                        : "0.00 ₽"}
+                    </div>
+                  </div>
+                  <div className="bg-white/95 p-2 rounded border border-amber-200">
+                    <div className="text-muted-foreground text-[10.5px] uppercase">Цена с НДС:</div>
+                    <div className="font-bold text-emerald-700 text-sm mt-0.5">
+                      {numPrice > 0
+                        ? `${priceWithVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽/т`
+                        : "0.00 ₽"}
+                    </div>
+                  </div>
+                  <div className="bg-white/95 p-2 rounded border border-amber-200">
+                    <div className="text-muted-foreground text-[10.5px] uppercase">
+                      Итого с НДС:
+                    </div>
+                    <div className="font-bold text-emerald-900 text-sm mt-0.5">
+                      {totalWithVat > 0
+                        ? `${totalWithVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
+                        : numPrice > 0
+                        ? `${priceWithVat.toLocaleString("ru-RU")} ₽/т`
+                        : "0.00 ₽"}
+                    </div>
+                  </div>
+                </div>
+
+                {numVolume > 0 && numPrice > 0 && (
+                  <div className="text-[11.5px] text-amber-950 bg-white/80 px-2.5 py-1.5 rounded flex justify-between flex-wrap gap-1 border border-amber-200/60">
+                    <span>
+                      Партия: <b>{numVolume.toLocaleString("ru-RU")} т</b> × <b>{numPrice.toLocaleString("ru-RU")} ₽/т</b> = <b>{totalWithoutVat.toLocaleString("ru-RU")} ₽</b> (без НДС)
+                    </span>
+                    {numVatRate > 0 && (
+                      <span>
+                        Сумма НДС ({numVatRate}%): <b>{totalVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽</b>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

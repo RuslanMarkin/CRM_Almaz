@@ -20,6 +20,7 @@ export interface SpecEditingData {
   notes?: string | null;
   loadingAddress?: string | null;
   unloadingAddress?: string | null;
+  vatRate?: string | null;
 }
 
 export interface AddContractSpecificationModalProps {
@@ -65,6 +66,7 @@ export function AddContractSpecificationModal({
   const [cargoName, setCargoName] = useState("");
   const [volumeTotal, setVolumeTotal] = useState("");
   const [pricePerUnit, setPricePerUnit] = useState("");
+  const [vatRate, setVatRate] = useState("10");
   const [status, setStatus] = useState<"draft" | "active" | "completed" | "cancelled">("active");
   const [loadingAddress, setLoadingAddress] = useState("");
   const [unloadingAddress, setUnloadingAddress] = useState("");
@@ -84,6 +86,7 @@ export function AddContractSpecificationModal({
         setCargoName(editingSpec.cargoName || "");
         setVolumeTotal(editingSpec.volumeTotal ? String(editingSpec.volumeTotal) : "");
         setPricePerUnit(editingSpec.pricePerUnit ? String(editingSpec.pricePerUnit) : "");
+        setVatRate(editingSpec.vatRate || "10");
         setStatus(editingSpec.status || "active");
         setLoadingAddress(editingSpec.loadingAddress || "");
         setUnloadingAddress(editingSpec.unloadingAddress || "");
@@ -94,6 +97,7 @@ export function AddContractSpecificationModal({
         setCargoName("Пшеница продовольственная 3 класс");
         setVolumeTotal("");
         setPricePerUnit("");
+        setVatRate("10");
         setStatus("active");
         setLoadingAddress("");
         setUnloadingAddress("");
@@ -107,7 +111,12 @@ export function AddContractSpecificationModal({
 
   const numVolume = Number(volumeTotal) || 0;
   const numPrice = Number(pricePerUnit) || 0;
-  const totalAmount = numVolume > 0 && numPrice > 0 ? numVolume * numPrice : 0;
+  const numVatRate = Number(vatRate) || 0;
+  const vatPerUnit = numPrice * (numVatRate / 100);
+  const priceWithVat = numPrice + vatPerUnit;
+  const totalWithoutVat = numVolume * numPrice;
+  const totalVat = numVolume * vatPerUnit;
+  const totalWithVat = numVolume * priceWithVat;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -136,6 +145,7 @@ export function AddContractSpecificationModal({
             cargoName: cargoName.trim() || undefined,
             volumeTotal: volumeTotal.trim(),
             pricePerUnit: pricePerUnit.trim(),
+            vatRate: vatRate.trim() || "10",
             status,
             loadingAddress: loadingAddress.trim() || undefined,
             unloadingAddress: unloadingAddress.trim() || undefined,
@@ -151,6 +161,7 @@ export function AddContractSpecificationModal({
           cargoName: cargoName.trim() || undefined,
           volumeTotal: volumeTotal.trim(),
           pricePerUnit: pricePerUnit.trim(),
+          vatRate: vatRate.trim() || "10",
           unit: "т",
           currency: "RUB",
           status,
@@ -314,7 +325,7 @@ export function AddContractSpecificationModal({
             </label>
 
             <label className="agro-field">
-              <span>Цена за тонну, ₽/т *</span>
+              <span>Цена за тонну (без НДС), ₽/т *</span>
               <input
                 type="number"
                 step="any"
@@ -327,27 +338,129 @@ export function AddContractSpecificationModal({
             </label>
           </div>
 
-          {/* Real-time sum calculation */}
-          {totalAmount > 0 && (
+          {/* Плашка НДС с автоматическим пересчётом */}
+          <div
+            style={{
+              borderRadius: "8px",
+              border: "1px solid #fcd34d",
+              background: "#fffbeb",
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#78350f" }}>
+                  Ставка НДС
+                </span>
+                <span style={{ fontSize: "11px", color: "#92400e" }}>
+                  (выберите или укажите процент):
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+                {[
+                  { label: "Без НДС (0%)", value: "0" },
+                  { label: "5%", value: "5" },
+                  { label: "10%", value: "10" },
+                  { label: "20%", value: "20" },
+                  { label: "22%", value: "22" },
+                ].map((rate) => (
+                  <button
+                    type="button"
+                    key={rate.value}
+                    onClick={() => setVatRate(rate.value)}
+                    style={{
+                      fontSize: "11px",
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      fontWeight: 600,
+                      border: "1px solid",
+                      cursor: "pointer",
+                      background: vatRate === rate.value ? "#d97706" : "#ffffff",
+                      color: vatRate === rate.value ? "#ffffff" : "#78350f",
+                      borderColor: vatRate === rate.value ? "#d97706" : "#fcd34d",
+                      boxShadow: vatRate === rate.value ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
+                    }}
+                  >
+                    {rate.label}
+                  </button>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", gap: "3px", background: "#fff", padding: "2px 6px", borderRadius: "5px", border: "1px solid #fcd34d" }}>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    max="100"
+                    value={vatRate}
+                    onChange={(e) => setVatRate(e.target.value)}
+                    placeholder="%"
+                    style={{ width: "38px", fontSize: "11.5px", fontWeight: 700, border: "none", outline: "none", color: "#78350f", background: "transparent", padding: 0 }}
+                  />
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#92400e" }}>%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Карточки автоматического пересчёта */}
             <div
               style={{
-                background: "var(--grain-subtle, #f8f6f0)",
-                border: "1px solid var(--line)",
-                borderRadius: "8px",
-                padding: "10px 14px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+                gap: "8px",
+                paddingTop: "8px",
+                borderTop: "1px solid #fde68a",
+                fontSize: "11.5px",
               }}
             >
-              <span style={{ fontSize: "12px", color: "var(--soil-soft)" }}>
-                Сумма по спецификации ({numVolume.toLocaleString("ru-RU")} т × {numPrice.toLocaleString("ru-RU")} ₽):
-              </span>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--soil)" }}>
-                {totalAmount.toLocaleString("ru-RU")} ₽
-              </span>
+              <div style={{ background: "#ffffff", padding: "8px 10px", borderRadius: "6px", border: "1px solid #fef3c7" }}>
+                <div style={{ color: "var(--soil-soft)", fontSize: "10.5px", textTransform: "uppercase" }}>Без НДС</div>
+                <div style={{ fontWeight: 700, color: "var(--soil)", fontSize: "13px", marginTop: "2px" }}>
+                  {numPrice > 0 ? `${numPrice.toLocaleString("ru-RU")} ₽/т` : "0 ₽"}
+                </div>
+              </div>
+              <div style={{ background: "#ffffff", padding: "8px 10px", borderRadius: "6px", border: "1px solid #fef3c7" }}>
+                <div style={{ color: "var(--soil-soft)", fontSize: "10.5px", textTransform: "uppercase" }}>НДС ({numVatRate}%)</div>
+                <div style={{ fontWeight: 700, color: "#b45309", fontSize: "13px", marginTop: "2px" }}>
+                  {numPrice > 0 && numVatRate > 0
+                    ? `+${vatPerUnit.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽/т`
+                    : "0 ₽"}
+                </div>
+              </div>
+              <div style={{ background: "#ffffff", padding: "8px 10px", borderRadius: "6px", border: "1px solid #fef3c7" }}>
+                <div style={{ color: "var(--soil-soft)", fontSize: "10.5px", textTransform: "uppercase" }}>С НДС за тонну</div>
+                <div style={{ fontWeight: 700, color: "#15803d", fontSize: "13px", marginTop: "2px" }}>
+                  {numPrice > 0
+                    ? `${priceWithVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽/т`
+                    : "0 ₽"}
+                </div>
+              </div>
+              <div style={{ background: "#ffffff", padding: "8px 10px", borderRadius: "6px", border: "1px solid #fef3c7" }}>
+                <div style={{ color: "var(--soil-soft)", fontSize: "10.5px", textTransform: "uppercase" }}>Итого с НДС</div>
+                <div style={{ fontWeight: 700, color: "#166534", fontSize: "13px", marginTop: "2px" }}>
+                  {totalWithVat > 0
+                    ? `${totalWithVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
+                    : numPrice > 0
+                    ? `${priceWithVat.toLocaleString("ru-RU")} ₽`
+                    : "0 ₽"}
+                </div>
+              </div>
             </div>
-          )}
+
+            {numVolume > 0 && numPrice > 0 && (
+              <div style={{ fontSize: "11px", color: "#78350f", background: "rgba(255,255,255,0.7)", padding: "6px 10px", borderRadius: "5px", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px" }}>
+                <span>
+                  Партия: <b>{numVolume.toLocaleString("ru-RU")} т</b> = <b>{totalWithoutVat.toLocaleString("ru-RU")} ₽</b> (без НДС)
+                </span>
+                {numVatRate > 0 && (
+                  <span>
+                    Сумма НДС ({numVatRate}%): <b>{totalVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽</b>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* File upload for new spec */}
           {!editingSpec && (

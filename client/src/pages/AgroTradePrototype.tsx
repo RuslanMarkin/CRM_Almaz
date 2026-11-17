@@ -1377,7 +1377,12 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                             const isActive = spec.status === "active" || spec.status === "draft";
                             const vol = Number(spec.volumeTotal) || 0;
                             const price = Number(spec.pricePerUnit) || 0;
-                            const totalAmount = vol > 0 && price > 0 ? vol * price : 0;
+                            const vat = Number((spec as any).vatRate ?? 10);
+                            const vatPerUnit = price * (vat / 100);
+                            const priceWithVat = price + vatPerUnit;
+                            const totalWithoutVat = vol * price;
+                            const totalVat = vol * vatPerUnit;
+                            const totalWithVat = vol * priceWithVat;
                             return (
                               <div
                                 key={spec.id}
@@ -1430,6 +1435,15 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                                         ? "Отменена"
                                         : "Черновик"}
                                     </span>
+                                    {vat > 0 ? (
+                                      <span style={{ fontSize: "11px", padding: "1px 6px", borderRadius: "4px", background: "#fef3c7", color: "#92400e", fontWeight: 600 }}>
+                                        НДС {vat}%
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: "11px", padding: "1px 6px", borderRadius: "4px", background: "#f1f5f9", color: "#475569", fontWeight: 600 }}>
+                                        Без НДС
+                                      </span>
+                                    )}
                                   </div>
 
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1468,6 +1482,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                                           notes: spec.notes,
                                           loadingAddress: spec.loadingAddress,
                                           unloadingAddress: spec.unloadingAddress,
+                                          vatRate: (spec as any).vatRate ?? "10",
                                         })
                                       }
                                     >
@@ -1476,11 +1491,11 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                                   </div>
                                 </div>
 
-                                {/* Middle row: Tonnage, Price, Cargo, Total Sum */}
+                                {/* Middle row: Tonnage, Price, Cargo, Total Sum with VAT breakdown */}
                                 <div
                                   style={{
                                     display: "grid",
-                                    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                                    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
                                     gap: "10px",
                                     padding: "10px 12px",
                                     background: "var(--grain-subtle, #f8f6f0)",
@@ -1513,20 +1528,32 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
 
                                   <div>
                                     <div style={{ color: "var(--soil-soft)", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>
-                                      Цена за тонну
+                                      Цена без НДС
                                     </div>
                                     <div style={{ fontWeight: 700, color: "var(--soil)", fontSize: "14px", marginTop: "2px" }}>
                                       {price > 0 ? `${price.toLocaleString("ru-RU")} ₽/т` : "—"}
                                     </div>
+                                    {vat > 0 && price > 0 ? (
+                                      <div style={{ fontSize: "11px", color: "#15803d", fontWeight: 600, marginTop: "1px" }}>
+                                        с НДС: {priceWithVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽/т
+                                      </div>
+                                    ) : (
+                                      <div style={{ fontSize: "11px", color: "var(--soil-soft)" }}>без НДС</div>
+                                    )}
                                   </div>
 
                                   <div>
                                     <div style={{ color: "var(--soil-soft)", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>
-                                      Сумма спецификации
+                                      Итого с НДС
                                     </div>
-                                    <div style={{ fontWeight: 700, color: "var(--soil)", fontSize: "14px", marginTop: "2px" }}>
-                                      {totalAmount > 0 ? `${totalAmount.toLocaleString("ru-RU")} ₽` : "—"}
+                                    <div style={{ fontWeight: 700, color: "#166534", fontSize: "14px", marginTop: "2px" }}>
+                                      {totalWithVat > 0 ? `${totalWithVat.toLocaleString("ru-RU")} ₽` : "—"}
                                     </div>
+                                    {vat > 0 && totalWithoutVat > 0 && (
+                                      <div style={{ fontSize: "10.5px", color: "var(--soil-soft)", marginTop: "1px" }}>
+                                        НДС: {totalVat.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
