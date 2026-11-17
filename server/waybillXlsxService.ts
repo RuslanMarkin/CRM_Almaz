@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import zlib from "zlib";
 import type { Counterparty } from "../drizzle/schema";
 import type { WaybillPrintData } from "./waybillPrintService";
@@ -14,12 +15,21 @@ interface ZipEntry {
   data: Buffer;
 }
 
+function getDirname(): string {
+  try {
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return process.cwd();
+  }
+}
+
 function getTemplatePath(): string {
+  const baseDir = getDirname();
   const candidates = [
     path.join(process.cwd(), "server", "templates", "ttn-waybill-template.xlsx"),
-    path.join(__dirname, "..", "server", "templates", "ttn-waybill-template.xlsx"),
-    path.join(__dirname, "server", "templates", "ttn-waybill-template.xlsx"),
-    path.join(__dirname, "templates", "ttn-waybill-template.xlsx"),
+    path.join(baseDir, "..", "server", "templates", "ttn-waybill-template.xlsx"),
+    path.join(baseDir, "server", "templates", "ttn-waybill-template.xlsx"),
+    path.join(baseDir, "templates", "ttn-waybill-template.xlsx"),
     path.join(process.cwd(), "dist", "templates", "ttn-waybill-template.xlsx"),
     path.join(process.cwd(), "templates", "ttn-waybill-template.xlsx"),
     path.resolve("server/templates/ttn-waybill-template.xlsx"),
