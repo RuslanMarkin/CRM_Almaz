@@ -190,8 +190,8 @@ const navItems: Array<{ key: ViewKey; icon: string; label: string; disabled?: bo
   { key: "dashboard", icon: "◧", label: "Дашборд" },
   { key: "deals", icon: "⇄", label: "Сделки" },
   { key: "contractors", icon: "☰", label: "Контрагенты" },
-  { key: "contracts", icon: "📖", label: "Договоры" },
-  { key: "specifications", icon: "📄", label: "Спецификации" },
+  { key: "contracts", icon: "§", label: "Договоры" },
+  { key: "specifications", icon: "☷", label: "Спецификации" },
   { key: "ttn", icon: "▥", label: "ТТН" },
 ];
 
@@ -833,7 +833,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                   <div className="agro-page-sub">Единый центр: связка закупки, логистики, реализации, ТТН и контроль маржи M</div>
                 </div>
                 <button type="button" className="agro-btn" onClick={openCreateDeal}>
-                  ⚡ Новая сделка (Deal Desk)
+                  Новая сделка (Deal Desk)
                 </button>
               </div>
               {dealsLoading ? <Panel><div className="agro-muted">Загрузка сделок...</div></Panel> : !dealViewModels.length ? (
@@ -1295,7 +1295,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                           <b>ТТН № {waybill.number}</b>{waybill.netWeight ? ` · ${waybill.netWeight} т` : ""} · <span style={{ color: "var(--soil-soft)" }}>{waybill.status === "delivered" ? "доставлена" : waybill.status === "in_transit" ? "в пути" : "черновик"}</span>
                         </div>
                         <div style={{ fontSize: "12px", color: "var(--soil-soft)", marginTop: "2px" }}>
-                          🚛 {waybill.carrierName || "Перевозчик не назначен"}{waybill.driverName ? ` · Водитель: ${waybill.driverName}` : ""}{waybill.tractorNumber ? ` (${waybill.tractorNumber})` : ""}
+                          {waybill.carrierName || "Перевозчик не назначен"}{waybill.driverName ? ` · Водитель: ${waybill.driverName}` : ""}{waybill.tractorNumber ? ` (${waybill.tractorNumber})` : ""}
                         </div>
                       </div>
                       <a href={`/api/waybills/${waybill.id}/print`} target="_blank" rel="noreferrer" className="agro-btn ghost compact" style={{ textDecoration: "none" }}>
