@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { ScanAttachments } from "@/components/ScanAttachments";
+import { StatutoryDocumentsSection } from "@/components/StatutoryDocumentsSection";
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
+import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
 import { toast } from "sonner";
 import Waybills from "./Waybills";
 
@@ -9,7 +11,6 @@ type ViewKey =
   | "dashboard"
   | "deals"
   | "contractors"
-  | "statutory"
   | "logistics"
   | "receivables"
   | "bank"
@@ -27,6 +28,7 @@ type CounterpartyFormState = {
   shortName: string;
   type: "legal" | "individual" | "sole_trader";
   businessRole: CounterpartyRole;
+  vatType: CounterpartyVatType;
   status: CounterpartyStatus;
   region: string;
   profile: string;
@@ -99,6 +101,7 @@ const emptyCounterpartyForm: CounterpartyFormState = {
   shortName: "",
   type: "legal",
   businessRole: "seller",
+  vatType: "with_vat",
   status: "normal",
   region: "",
   profile: "",
@@ -165,6 +168,7 @@ function toCounterpartyForm(counterparty: Partial<Record<keyof CounterpartyFormS
     ...Object.fromEntries(Object.entries(counterparty).map(([key, value]) => [key, value ?? ""])),
   } as CounterpartyFormState;
   if (!COUNTERPARTY_STATUS_VALUES.includes(form.status)) form.status = "normal";
+  if (form.vatType !== "without_vat") form.vatType = "with_vat";
   return form;
 }
 
@@ -179,7 +183,6 @@ const navItems: Array<{ key: ViewKey; icon: string; label: string; disabled?: bo
   { key: "dashboard", icon: "◧", label: "Дашборд" },
   { key: "deals", icon: "⇄", label: "Сделки" },
   { key: "contractors", icon: "☰", label: "Контрагенты" },
-  { key: "statutory", icon: "⚑", label: "Уставные документы" },
   { key: "logistics", icon: "▤", label: "Логистика", disabled: true },
   { key: "receivables", icon: "฿", label: "Дебиторка", disabled: true },
   { key: "bank", icon: "▣", label: "Банк", disabled: true },
@@ -191,8 +194,8 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
   const [loggedIn, setLoggedIn] = useState(false);
   const [selectedRole, setSelectedRole] = useState<"director" | "manager">("director");
   const [activeView, setActiveView] = useState<ViewKey>(initialView);
-  const [selectedStatutoryCounterpartyId, setSelectedStatutoryCounterpartyId] = useState("");
   const [counterpartyTab, setCounterpartyTab] = useState<CounterpartyTab>("all");
+  const [counterpartyVatTab, setCounterpartyVatTab] = useState<"all" | CounterpartyVatType>("all");
   const [selectedCounterpartyId, setSelectedCounterpartyId] = useState<number | null>(null);
   const [counterpartyFormOpen, setCounterpartyFormOpen] = useState(false);
   const [organizationFormOpen, setOrganizationFormOpen] = useState(false);
@@ -248,13 +251,11 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
   }
 
   const filteredCounterparties = counterparties.filter((counterparty) => {
-    if (counterpartyTab === "all") return true;
-    return counterparty.businessRole === counterpartyTab;
+    if (counterpartyTab !== "all" && counterparty.businessRole !== counterpartyTab) return false;
+    if (counterpartyVatTab !== "all" && (counterparty.vatType ?? "with_vat") !== counterpartyVatTab) return false;
+    return true;
   });
   const selectedCounterparty = counterparties.find((counterparty) => counterparty.id === selectedCounterpartyId) ?? null;
-  const selectedStatutoryCounterparty = counterparties.find(
-    (counterparty) => String(counterparty.id) === selectedStatutoryCounterpartyId,
-  ) ?? null;
   const selectedCounterpartyContracts = selectedCounterparty
     ? contracts.filter((item) => item.contract.counterpartyId === selectedCounterparty.id)
     : [];
@@ -664,30 +665,55 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                   <button type="button" className="agro-btn ghost small" onClick={openOrganizationProfile}>Редактировать</button>
                 </div>
               </Panel>
-              <div className="agro-tabs">
-                {([
-                  ["all", "Все"],
-                  ["seller", "Продавцы"],
-                  ["buyer", "Покупатели"],
-                  ["carrier", "Перевозчики"],
-                ] as Array<[CounterpartyTab, string]>).map(([tab, label]) => (
+              <div className="agro-filter-group">
+                <div className="agro-tabs">
+                  {([
+                    ["all", "Все роли"],
+                    ["seller", "Продавцы"],
+                    ["buyer", "Покупатели"],
+                    ["carrier", "Перевозчики"],
+                  ] as Array<[CounterpartyTab, string]>).map(([tab, label]) => (
+                    <button
+                      type="button"
+                      key={tab}
+                      className={counterpartyTab === tab ? "active" : ""}
+                      onClick={() => setCounterpartyTab(tab)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="agro-tabs agro-tabs-vat">
                   <button
                     type="button"
-                    key={tab}
-                    className={counterpartyTab === tab ? "active" : ""}
-                    onClick={() => setCounterpartyTab(tab)}
+                    className={counterpartyVatTab === "all" ? "active" : ""}
+                    onClick={() => setCounterpartyVatTab("all")}
                   >
-                    {label}
+                    Все системы
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    className={counterpartyVatTab === "with_vat" ? "active" : ""}
+                    onClick={() => setCounterpartyVatTab("with_vat")}
+                  >
+                    С НДС
+                  </button>
+                  <button
+                    type="button"
+                    className={counterpartyVatTab === "without_vat" ? "active" : ""}
+                    onClick={() => setCounterpartyVatTab("without_vat")}
+                  >
+                    Без НДС
+                  </button>
+                </div>
               </div>
               <Panel flush>
                 <table className="agro-table">
-                  <thead><tr><th>Контрагент</th><th>Тип</th><th>Регион</th><th>Профиль</th><th>Статус</th></tr></thead>
+                  <thead><tr><th>Контрагент</th><th>Роль</th><th>НДС</th><th>Регион</th><th>Профиль</th><th>Статус</th></tr></thead>
                   <tbody>
-                    {counterpartiesLoading && <tr><td colSpan={5} className="agro-empty-row">Загрузка контрагентов...</td></tr>}
+                    {counterpartiesLoading && <tr><td colSpan={6} className="agro-empty-row">Загрузка контрагентов...</td></tr>}
                     {!counterpartiesLoading && !filteredCounterparties.length && (
-                      <tr><td colSpan={5} className="agro-empty-row">В этом разделе пока нет контрагентов. Создайте первую карточку.</td></tr>
+                      <tr><td colSpan={6} className="agro-empty-row">В этом разделе пока нет контрагентов. Создайте первую карточку.</td></tr>
                     )}
                     {filteredCounterparties.map((counterparty) => {
                       const isComplete = Boolean(counterparty.inn && counterparty.bankAccount && counterparty.representativeName);
@@ -700,6 +726,11 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                             {counterparty.shortName && <div className="agro-table-secondary">{counterparty.name}</div>}
                           </td>
                           <td><span className="agro-tag">{roleLabels[counterparty.businessRole as CounterpartyRole] ?? "Роль не назначена"}</span></td>
+                          <td>
+                            <span className={`agro-vat-badge ${counterparty.vatType === "without_vat" ? "no-vat" : "vat"}`}>
+                              {counterparty.vatType === "without_vat" ? "Без НДС" : "С НДС"}
+                            </span>
+                          </td>
                           <td>{counterparty.region || "—"}</td>
                           <td>{counterparty.profile || "—"}</td>
                           <td>
@@ -711,31 +742,6 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                     })}
                   </tbody>
                 </table>
-              </Panel>
-            </section>
-          )}
-
-          {activeView === "statutory" && (
-            <section className="agro-view">
-              <PageHead title="Уставные документы" subtitle="Сканы и документы контрагентов" />
-              <Panel title="Документы контрагентов">
-                <label className="agro-document-select">
-                  <span>Контрагент</span>
-                  <select value={selectedStatutoryCounterpartyId} onChange={(event) => setSelectedStatutoryCounterpartyId(event.target.value)}>
-                    <option value="">Выберите контрагента</option>
-                    {counterparties.map((counterparty) => (
-                      <option key={counterparty.id} value={counterparty.id}>{counterparty.shortName || counterparty.name}</option>
-                    ))}
-                  </select>
-                </label>
-                {selectedStatutoryCounterparty ? (
-                  <ScanAttachments
-                    entityType="counterparty"
-                    entityId={selectedStatutoryCounterparty.id}
-                    documentKind="statutory_document"
-                    title={`Уставные документы: ${selectedStatutoryCounterparty.shortName || selectedStatutoryCounterparty.name}`}
-                  />
-                ) : <div className="agro-muted">Выберите контрагента, чтобы открыть его архив документов.</div>}
               </Panel>
             </section>
           )}
@@ -795,7 +801,12 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               <div>
                 <div className="agro-dialog-kicker">Карточка контрагента</div>
                 <h2>{selectedCounterparty.name}</h2>
-                <span className="agro-tag">{roleLabels[selectedCounterparty.businessRole as CounterpartyRole] ?? "Роль не назначена"}</span>
+                <div className="agro-dialog-badges">
+                  <span className="agro-tag">{roleLabels[selectedCounterparty.businessRole as CounterpartyRole] ?? "Роль не назначена"}</span>
+                  <span className={`agro-vat-badge ${selectedCounterparty.vatType === "without_vat" ? "no-vat" : "vat"}`}>
+                    {selectedCounterparty.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"}
+                  </span>
+                </div>
               </div>
               <button type="button" className="agro-icon-button" onClick={() => setSelectedCounterpartyId(null)} aria-label="Закрыть карточку" title="Закрыть">×</button>
             </div>
@@ -806,6 +817,7 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
               <div className="agro-detail-group">
                 <h3>Основное</h3>
                 <DetailItem label="Краткое наименование" value={selectedCounterparty.shortName} />
+                <DetailItem label="Налогообложение" value={selectedCounterparty.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"} />
                 <DetailItem label="Регион" value={selectedCounterparty.region} />
                 <DetailItem label="Профиль" value={selectedCounterparty.profile} />
                 <DetailItem label="ИНН" value={selectedCounterparty.inn} />
@@ -823,6 +835,13 @@ export default function AgroTradePrototype({ initialView = "dashboard" }: AgroTr
                 <DetailItem label="Расчётный счёт" value={selectedCounterparty.bankAccount} />
                 <DetailItem label="Корр. счёт" value={selectedCounterparty.corrAccount} />
               </div>
+            </div>
+            <div className="agro-counterparty-statutory-wrap">
+              <StatutoryDocumentsSection
+                counterpartyId={selectedCounterparty.id}
+                vatType={selectedCounterparty.vatType as CounterpartyVatType}
+                counterpartyName={selectedCounterparty.shortName || selectedCounterparty.name}
+              />
             </div>
             <div className="agro-counterparty-scans">
               <h3>Договоры и сканы</h3>
@@ -1098,6 +1117,7 @@ function CounterpartyFormModal({
             <label className="agro-field"><span>Краткое наименование</span><input value={form.shortName} onChange={(event) => setField("shortName", event.target.value)} /></label>
             <label className="agro-field"><span>Организационная форма</span><select value={form.type} onChange={(event) => setField("type", event.target.value)}><option value="legal">ООО / АО / ПАО</option><option value="sole_trader">ИП</option><option value="individual">Физическое лицо</option></select></label>
             <label className="agro-field"><span>Роль в цепочке</span><select value={form.businessRole} onChange={(event) => setField("businessRole", event.target.value)}>{Object.entries(roleLabels).map(([role, label]) => <option value={role} key={role}>{label}</option>)}</select></label>
+            <label className="agro-field"><span>Система налогообложения</span><select value={form.vatType} onChange={(event) => setField("vatType", event.target.value)}><option value="with_vat">С НДС (ОСНО)</option><option value="without_vat">Без НДС (УСН)</option></select></label>
             <label className="agro-field"><span>Статус</span><select value={form.status} onChange={(event) => setField("status", event.target.value)}>{Object.entries(COUNTERPARTY_STATUSES).map(([value, status]) => <option key={value} value={value}>{status.label}</option>)}</select></label>
             <label className="agro-field"><span>Регион</span><input value={form.region} onChange={(event) => setField("region", event.target.value)} placeholder="Ставропольский край" /></label>
             <label className="agro-field agro-field-wide"><span>Профиль продукции / услуг</span><input value={form.profile} onChange={(event) => setField("profile", event.target.value)} placeholder="Пшеница, ячмень или автоперевозки" /></label>
@@ -1412,6 +1432,16 @@ const agroStyles = `
 .agro-status-badge.blacklisted{background:#FBE4E0; color:var(--rust);}
 .agro-status-badge.debtor{background:#FDEBD7; color:#B4560A;}
 .agro-tag{display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600; background:#EAF1E5; color:var(--leaf);}
+.agro-vat-badge{display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;}
+.agro-vat-badge.vat{background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE;}
+.agro-vat-badge.no-vat{background:#FEF3C7; color:#B45309; border:1px solid #FDE68A;}
+.agro-filter-group{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px;}
+.agro-filter-group .agro-tabs{margin-bottom:0;}
+.agro-tabs-vat{border-bottom:0;}
+.agro-tabs-vat button{border-radius:6px; padding:6px 12px; font-size:12px; border:1px solid var(--line); background:#fff;}
+.agro-tabs-vat .active{background:var(--soil); color:#fff; border-color:var(--soil);}
+.agro-dialog-badges{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;}
+.agro-counterparty-statutory-wrap{margin-top:16px;}
 .agro-muted{color:var(--soil-soft); font-size:13px; padding:4px 0;}
 .agro-reference-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px;}
 .agro-reference-grid div{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:13px;}

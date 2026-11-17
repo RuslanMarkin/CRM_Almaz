@@ -64,7 +64,8 @@ export async function migrateDatabase() {
     );
   }
 
-  const migrationsFolder = path.resolve(import.meta.dirname, "..", "drizzle");
+  const baseDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
+  const migrationsFolder = path.resolve(baseDir, "..", "drizzle");
   await migrate(db, { migrationsFolder });
 }
 

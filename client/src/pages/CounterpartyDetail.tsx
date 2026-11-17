@@ -1,6 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_TYPES, CONTRACT_STATUSES, SPEC_STATUSES, WAYBILL_STATUSES, formatDate, formatCurrency } from "@/lib/utils";
 import { COUNTERPARTY_STATUSES, type CounterpartyStatus } from "@shared/counterpartyStatus";
+import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
+import { StatutoryDocumentsSection } from "@/components/StatutoryDocumentsSection";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Building2, BookOpen, ScrollText, Truck, Copy } from "lucide-react";
@@ -66,10 +68,19 @@ export default function CounterpartyDetail() {
             {COUNTERPARTY_TYPES[cp.type as keyof typeof COUNTERPARTY_TYPES] ?? cp.type}
             {cp.inn && ` · ИНН ${cp.inn}`}
           </p>
-          <div className="mt-2">
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
             <StatusBadge
               {...(COUNTERPARTY_STATUSES[(cp.status ?? "normal") as CounterpartyStatus] ?? COUNTERPARTY_STATUSES.normal)}
             />
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                cp.vatType === "without_vat"
+                  ? "bg-amber-100 text-amber-800 border-amber-200"
+                  : "bg-blue-100 text-blue-800 border-blue-200"
+              }`}
+            >
+              {cp.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"}
+            </span>
           </div>
         </div>
       </div>
@@ -79,6 +90,7 @@ export default function CounterpartyDetail() {
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm p-5 group">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Реквизиты</p>
+            <ReqRow label="Система налогообложения" value={cp.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"} />
             <ReqRow label="ИНН" value={cp.inn} mono />
             <ReqRow label="ОГРН" value={cp.ogrn} mono />
             <ReqRow label="КПП" value={cp.kpp} mono />
@@ -111,6 +123,12 @@ export default function CounterpartyDetail() {
               <p className="text-sm text-foreground">{cp.notes}</p>
             </div>
           )}
+
+          <StatutoryDocumentsSection
+            counterpartyId={id}
+            vatType={cp.vatType as CounterpartyVatType}
+            counterpartyName={cp.name}
+          />
         </div>
 
         {/* Sidebar: linked documents */}
