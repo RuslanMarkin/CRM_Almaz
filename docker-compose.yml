@@ -23,7 +23,7 @@ services:
       start_period: 15s
 
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-28Z
+    image: pgsty/silo:latest
     container_name: almaz_minio
     restart: always
     command: server /data --console-address ":9001"
@@ -36,7 +36,7 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "silo healthcheck ready || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
