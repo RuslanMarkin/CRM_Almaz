@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Calculator, LogOut, Plus, Truck } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DealDeskModal, type DealDeskSubmission } from "@/components/DealDeskModal";
+import { AddContractSpecificationModal, type ContractRef, type SpecEditingData } from "@/components/AddContractSpecificationModal";
 import Waybills from "./Waybills";
 import Contracts from "./Contracts";
 import Specifications from "./Specifications";
@@ -223,6 +224,35 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
 
   const createContractMutation = trpc.contracts.create.useMutation();
   const createSpecificationMutation = trpc.specifications.create.useMutation();
+
+  const [specModalOpen, setSpecModalOpen] = useState(false);
+  const [specModalContract, setSpecModalContract] = useState<ContractRef | null>(null);
+  const [specModalNextNumber, setSpecModalNextNumber] = useState<string>("1");
+  const [specModalEditing, setSpecModalEditing] = useState<SpecEditingData | null>(null);
+  const [specFilterTabs, setSpecFilterTabs] = useState<Record<number, "all" | "active" | "past">>({});
+
+  const updateSpecStatusMutation = trpc.specifications.updateStatus.useMutation({
+    onSuccess: () => {
+      utils.specifications.list.invalidate();
+      toast.success("Статус спецификации обновлен");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Ошибка обновления статуса");
+    },
+  });
+
+  function openAddSpecModal(contract: ContractRef, existingCount: number) {
+    setSpecModalContract(contract);
+    setSpecModalNextNumber(String(existingCount + 1));
+    setSpecModalEditing(null);
+    setSpecModalOpen(true);
+  }
+
+  function openEditSpecModal(contract: ContractRef, spec: SpecEditingData) {
+    setSpecModalContract(contract);
+    setSpecModalEditing(spec);
+    setSpecModalOpen(true);
+  }
 
   useEffect(() => {
     if (initialCounterpartyId) {
@@ -1115,22 +1145,408 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               </div>
               {!selectedCounterpartyContracts.length && <div className="agro-muted">У контрагента пока нет договоров.</div>}
               {selectedCounterpartyContracts.map((item) => {
-                const contractSpecifications = specifications.filter((specification) => specification.specification.contractId === item.contract.id);
+                const contractSpecifications = specifications.filter(
+                  (specification) => specification.specification.contractId === item.contract.id
+                );
+                const activeSpecs = contractSpecifications.filter(
+                  (s) => s.specification.status === "active" || s.specification.status === "draft"
+                );
+                const pastSpecs = contractSpecifications.filter(
+                  (s) => s.specification.status === "completed" || s.specification.status === "cancelled"
+                );
+
+                const currentFilter = specFilterTabs[item.contract.id] || "all";
+                const displayedSpecs =
+                  currentFilter === "active"
+                    ? activeSpecs
+                    : currentFilter === "past"
+                    ? pastSpecs
+                    : contractSpecifications;
+
+                const totalContractTons = contractSpecifications.reduce(
+                  (acc, s) => acc + (Number(s.specification.volumeTotal) || 0),
+                  0
+                );
+
                 return (
-                  <div key={item.contract.id} className="agro-linked-contract">
-                    <div className="agro-linked-contract-title">Договор № {item.contract.number}</div>
-                    <ScanAttachments entityType="contract" entityId={item.contract.id} documentKind="contract_scan" title="Скан договора" compact />
-                    {contractSpecifications.map((specification) => (
-                      <ScanAttachments
-                        key={specification.specification.id}
-                        entityType="contract"
-                        entityId={item.contract.id}
-                        documentKind="specification_scan"
-                        specificationId={specification.specification.id}
-                        title={`Скан спецификации № ${specification.specification.number}`}
-                        compact
-                      />
-                    ))}
+                  <div
+                    key={item.contract.id}
+                    className="agro-linked-contract"
+                    style={{
+                      border: "1px solid var(--line)",
+                      borderRadius: "10px",
+                      padding: "16px",
+                      marginBottom: "16px",
+                      background: "#fff",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "14px",
+                    }}
+                  >
+                    {/* Header: Title, badges, + Добавить спецификацию */}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        borderBottom: "1px solid var(--line)",
+                        paddingBottom: "12px",
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "16px", fontWeight: 700, color: "var(--soil)" }}>
+                            Договор № {item.contract.number}
+                          </span>
+                          <span className="agro-tag">
+                            {item.contract.contractKind === "purchase"
+                              ? "Закупка"
+                              : item.contract.contractKind === "sale"
+                              ? "Реализация"
+                              : "Перевозка"}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "11.5px",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                              fontWeight: 600,
+                              background: item.contract.status === "active" ? "#dcfce7" : "#f1f5f9",
+                              color: item.contract.status === "active" ? "#15803d" : "#475569",
+                            }}
+                          >
+                            {item.contract.status === "active"
+                              ? "Действует"
+                              : item.contract.status === "completed"
+                              ? "Завершён"
+                              : "Черновик"}
+                          </span>
+                        </div>
+                        {(item.contract.startDate || item.contract.endDate) && (
+                          <div style={{ fontSize: "12px", color: "var(--soil-soft)", marginTop: "4px" }}>
+                            {item.contract.startDate ? `от ${formatShortDate(item.contract.startDate)}` : ""}
+                            {item.contract.endDate ? ` по ${formatShortDate(item.contract.endDate)}` : ""}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="agro-btn compact"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12.5px", padding: "7px 14px" }}
+                        onClick={() => openAddSpecModal(item.contract, contractSpecifications.length)}
+                      >
+                        <Plus size={14} /> Добавить спецификацию
+                      </button>
+                    </div>
+
+                    {/* Scan of the contract */}
+                    <ScanAttachments
+                      entityType="contract"
+                      entityId={item.contract.id}
+                      documentKind="contract_scan"
+                      title="Скан договора"
+                      compact
+                    />
+
+                    {/* Specifications Section */}
+                    <div style={{ borderTop: "1px dashed var(--line)", paddingTop: "12px" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "8px",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--soil)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                            Спецификации к договору
+                          </span>
+                          {contractSpecifications.length > 0 && (
+                            <span style={{ fontSize: "12px", color: "var(--soil-soft)", marginLeft: "8px" }}>
+                              · Всего {contractSpecifications.length} шт ({totalContractTons.toLocaleString("ru-RU")} т)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Filter tabs: Все / Активные / Прошлые */}
+                        {contractSpecifications.length > 0 && (
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              borderRadius: "6px",
+                              border: "1px solid var(--line)",
+                              background: "var(--grain-subtle, #f8f6f0)",
+                              padding: "2px",
+                              gap: "2px",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setSpecFilterTabs((prev) => ({ ...prev, [item.contract.id]: "all" }))}
+                              style={{
+                                border: "none",
+                                background: currentFilter === "all" ? "#fff" : "transparent",
+                                color: currentFilter === "all" ? "var(--soil)" : "var(--soil-soft)",
+                                fontWeight: currentFilter === "all" ? 700 : 500,
+                                borderRadius: "4px",
+                                padding: "4px 8px",
+                                fontSize: "11.5px",
+                                cursor: "pointer",
+                                boxShadow: currentFilter === "all" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                              }}
+                            >
+                              Все ({contractSpecifications.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSpecFilterTabs((prev) => ({ ...prev, [item.contract.id]: "active" }))}
+                              style={{
+                                border: "none",
+                                background: currentFilter === "active" ? "#fff" : "transparent",
+                                color: currentFilter === "active" ? "#15803d" : "var(--soil-soft)",
+                                fontWeight: currentFilter === "active" ? 700 : 500,
+                                borderRadius: "4px",
+                                padding: "4px 8px",
+                                fontSize: "11.5px",
+                                cursor: "pointer",
+                                boxShadow: currentFilter === "active" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                              }}
+                            >
+                              Активные ({activeSpecs.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSpecFilterTabs((prev) => ({ ...prev, [item.contract.id]: "past" }))}
+                              style={{
+                                border: "none",
+                                background: currentFilter === "past" ? "#fff" : "transparent",
+                                color: currentFilter === "past" ? "#0369a1" : "var(--soil-soft)",
+                                fontWeight: currentFilter === "past" ? 700 : 500,
+                                borderRadius: "4px",
+                                padding: "4px 8px",
+                                fontSize: "11.5px",
+                                cursor: "pointer",
+                                boxShadow: currentFilter === "past" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                              }}
+                            >
+                              Прошлые ({pastSpecs.length})
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {!displayedSpecs.length ? (
+                        <div
+                          style={{
+                            padding: "16px",
+                            background: "var(--grain-subtle, #f8f6f0)",
+                            borderRadius: "8px",
+                            border: "1px dashed var(--line)",
+                            textAlign: "center",
+                            fontSize: "13px",
+                            color: "var(--soil-soft)",
+                          }}
+                        >
+                          {contractSpecifications.length === 0 ? (
+                            <div>
+                              <div>К этому договору пока не добавлено ни одной спецификации.</div>
+                              <button
+                                type="button"
+                                className="agro-btn compact"
+                                style={{ marginTop: "10px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                                onClick={() => openAddSpecModal(item.contract, 0)}
+                              >
+                                <Plus size={14} /> Добавить первую спецификацию
+                              </button>
+                            </div>
+                          ) : (
+                            <div>В этой категории нет спецификаций.</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                          {displayedSpecs.map((specItem) => {
+                            const spec = specItem.specification;
+                            const isActive = spec.status === "active" || spec.status === "draft";
+                            const vol = Number(spec.volumeTotal) || 0;
+                            const price = Number(spec.pricePerUnit) || 0;
+                            const totalAmount = vol > 0 && price > 0 ? vol * price : 0;
+                            return (
+                              <div
+                                key={spec.id}
+                                style={{
+                                  border: "1px solid var(--line)",
+                                  borderRadius: "8px",
+                                  padding: "12px 14px",
+                                  background: isActive ? "#ffffff" : "#fbfcfb",
+                                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "10px",
+                                }}
+                              >
+                                {/* Top row: Number, Status badge, Quick Status selector & Edit button */}
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span style={{ fontWeight: 700, fontSize: "14.5px", color: "var(--soil)" }}>
+                                      Спецификация № {spec.number}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: "11px",
+                                        padding: "2px 8px",
+                                        borderRadius: "12px",
+                                        fontWeight: 600,
+                                        background:
+                                          spec.status === "active"
+                                            ? "#dcfce7"
+                                            : spec.status === "completed"
+                                            ? "#e0f2fe"
+                                            : spec.status === "cancelled"
+                                            ? "#fee2e2"
+                                            : "#f1f5f9",
+                                        color:
+                                          spec.status === "active"
+                                            ? "#15803d"
+                                            : spec.status === "completed"
+                                            ? "#0369a1"
+                                            : spec.status === "cancelled"
+                                            ? "#b91c1c"
+                                            : "#475569",
+                                      }}
+                                    >
+                                      {spec.status === "active"
+                                        ? "Активна (в работе)"
+                                        : spec.status === "completed"
+                                        ? "Исполнена (прошлая)"
+                                        : spec.status === "cancelled"
+                                        ? "Отменена"
+                                        : "Черновик"}
+                                    </span>
+                                  </div>
+
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <select
+                                      value={spec.status}
+                                      onChange={(e) => updateSpecStatusMutation.mutate({ id: spec.id, status: e.target.value as any })}
+                                      style={{
+                                        fontSize: "11.5px",
+                                        padding: "4px 8px",
+                                        borderRadius: "5px",
+                                        border: "1px solid var(--line)",
+                                        background: "#fff",
+                                        color: "var(--soil)",
+                                        cursor: "pointer",
+                                      }}
+                                      title="Быстро сменить статус спецификации"
+                                    >
+                                      <option value="active">Активна</option>
+                                      <option value="completed">Исполнена</option>
+                                      <option value="draft">Черновик</option>
+                                      <option value="cancelled">Отменена</option>
+                                    </select>
+
+                                    <button
+                                      type="button"
+                                      className="agro-btn ghost compact"
+                                      style={{ padding: "4px 8px", fontSize: "11.5px" }}
+                                      onClick={() =>
+                                        openEditSpecModal(item.contract, {
+                                          id: spec.id,
+                                          number: spec.number,
+                                          cargoName: spec.cargoName,
+                                          volumeTotal: spec.volumeTotal,
+                                          pricePerUnit: spec.pricePerUnit,
+                                          status: spec.status,
+                                          notes: spec.notes,
+                                          loadingAddress: spec.loadingAddress,
+                                          unloadingAddress: spec.unloadingAddress,
+                                        })
+                                      }
+                                    >
+                                      Редактировать
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Middle row: Tonnage, Price, Cargo, Total Sum */}
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                                    gap: "10px",
+                                    padding: "10px 12px",
+                                    background: "var(--grain-subtle, #f8f6f0)",
+                                    borderRadius: "6px",
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ color: "var(--soil-soft)", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>
+                                      Товар / Культура
+                                    </div>
+                                    <div style={{ fontWeight: 600, color: "var(--soil)", marginTop: "2px" }}>
+                                      {spec.cargoName || "Товар не указан"}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div style={{ color: "var(--soil-soft)", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>
+                                      Тоннаж
+                                    </div>
+                                    <div style={{ fontWeight: 700, color: "var(--soil)", fontSize: "14px", marginTop: "2px" }}>
+                                      {vol > 0 ? `${vol.toLocaleString("ru-RU")} т` : "—"}
+                                    </div>
+                                    {spec.volumeShipped && Number(spec.volumeShipped) > 0 && (
+                                      <div style={{ fontSize: "11px", color: "var(--soil-soft)" }}>
+                                        отгружено {Number(spec.volumeShipped).toLocaleString("ru-RU")} т
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <div style={{ color: "var(--soil-soft)", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>
+                                      Цена за тонну
+                                    </div>
+                                    <div style={{ fontWeight: 700, color: "var(--soil)", fontSize: "14px", marginTop: "2px" }}>
+                                      {price > 0 ? `${price.toLocaleString("ru-RU")} ₽/т` : "—"}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div style={{ color: "var(--soil-soft)", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>
+                                      Сумма спецификации
+                                    </div>
+                                    <div style={{ fontWeight: 700, color: "var(--soil)", fontSize: "14px", marginTop: "2px" }}>
+                                      {totalAmount > 0 ? `${totalAmount.toLocaleString("ru-RU")} ₽` : "—"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Bottom row: Scan Attachments */}
+                                <div>
+                                  <ScanAttachments
+                                    entityType="contract"
+                                    entityId={item.contract.id}
+                                    documentKind="specification_scan"
+                                    specificationId={spec.id}
+                                    title={`Скан спецификации № ${spec.number}`}
+                                    compact
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1330,6 +1746,19 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
           });
           setCounterpartyFormOpen(true);
         }}
+      />
+
+      <AddContractSpecificationModal
+        open={specModalOpen}
+        onClose={() => {
+          setSpecModalOpen(false);
+          setSpecModalContract(null);
+          setSpecModalEditing(null);
+        }}
+        contract={specModalContract}
+        counterpartyName={selectedCounterparty?.shortName || selectedCounterparty?.name}
+        nextNumber={specModalNextNumber}
+        editingSpec={specModalEditing}
       />
 
       {counterpartyFormOpen && (
