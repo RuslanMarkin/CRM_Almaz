@@ -385,11 +385,20 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
         state: hasPurchaseSpec && hasSaleSpec ? ("complete" as const) : ("waiting" as const),
       },
       {
-        title: "Перевозчик",
-        detail: deal.carrierId
-          ? (carriageContract ? `Назначен · Договор № ${carriageContract.contract.number}` : "Перевозчик назначен")
-          : "Перевозчик не назначен",
-        state: deal.carrierId ? ("complete" as const) : ("waiting" as const),
+        title: "Перевозчики",
+        detail: (() => {
+          const uniqueCarrierNames = Array.from(new Set(linkedWaybills.map((w) => w.carrierName).filter(Boolean)));
+          if (uniqueCarrierNames.length > 0) {
+            return uniqueCarrierNames.length === 1
+              ? String(uniqueCarrierNames[0])
+              : `${uniqueCarrierNames.length} перевозчиков в рейсах (${uniqueCarrierNames.slice(0, 2).join(", ")}${uniqueCarrierNames.length > 2 ? "..." : ""})`;
+          }
+          if (deal.carrierId) {
+            return carriageContract ? `Назначен · Договор № ${carriageContract.contract.number}` : "Генеральный перевозчик назначен";
+          }
+          return "Пул перевозчиков (помашинно в ТТН)";
+        })(),
+        state: (deal.carrierId || linkedWaybills.some((w) => w.carrierName || w.carrierId)) ? ("complete" as const) : ("waiting" as const),
       },
       {
         title: "Отгрузка",
@@ -1289,7 +1298,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                 <div><span>Договоров</span><b>{selectedDeal.linkedContracts.length}</b></div>
                 <div><span>Спецификаций</span><b>{selectedDeal.linkedSpecifications.length}</b></div>
                 <div><span>Всего ТТН</span><b>{selectedDeal.linkedWaybills.length}</b></div>
-                <div><span>Закрыто ТТН</span><b>{selectedDeal.linkedWaybills.filter((waybill) => waybill.status === "delivered").length}</b></div>
+                <div><span>Перевозчиков</span><b>{new Set(selectedDeal.linkedWaybills.map((w) => w.carrierName || w.carrierId).filter(Boolean)).size || (selectedDeal.deal.carrierId ? 1 : 0)}</b></div>
               </div>
               {!selectedDeal.linkedSpecifications.length ? <div className="agro-muted">Привяжите спецификации в режиме редактирования: по ним в сделку попадут договоры и ТТН.</div> : (
                 <div className="agro-linked-document-list">
@@ -1302,8 +1311,15 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                     </div>
                   ))}
                   {selectedDeal.linkedWaybills.map((waybill) => (
-                    <div key={waybill.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>ТТН № {waybill.number} · {waybill.status === "delivered" ? "доставлена" : waybill.status === "in_transit" ? "в пути" : "черновик"}</span>
+                    <div key={waybill.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px dashed var(--line)" }}>
+                      <div>
+                        <div>
+                          <b>ТТН № {waybill.number}</b>{waybill.netWeight ? ` · ${waybill.netWeight} т` : ""} · <span style={{ color: "var(--soil-soft)" }}>{waybill.status === "delivered" ? "доставлена" : waybill.status === "in_transit" ? "в пути" : "черновик"}</span>
+                        </div>
+                        <div style={{ fontSize: "12px", color: "var(--soil-soft)", marginTop: "2px" }}>
+                          🚛 {waybill.carrierName || "Перевозчик не назначен"}{waybill.driverName ? ` · Водитель: ${waybill.driverName}` : ""}{waybill.tractorNumber ? ` (${waybill.tractorNumber})` : ""}
+                        </div>
+                      </div>
                       <a href={`/api/waybills/${waybill.id}/print`} target="_blank" rel="noreferrer" className="agro-btn ghost compact" style={{ textDecoration: "none" }}>
                         СП-31 ↗
                       </a>

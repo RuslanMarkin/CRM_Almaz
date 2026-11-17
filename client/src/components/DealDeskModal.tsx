@@ -510,7 +510,7 @@ export function DealDeskModal({
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                 <label style={{ fontSize: "11px", textTransform: "uppercase", fontWeight: 700, color: "var(--soil-soft)" }}>
-                  Перевозчик (АТП / Частник)
+                  Перевозчик / Логистика
                 </label>
                 {onOpenCreateCounterparty && (
                   <button
@@ -527,13 +527,16 @@ export function DealDeskModal({
                 onChange={(e) => setCarrierId(e.target.value)}
                 style={{ width: "100%", padding: "8px 10px", borderRadius: "6px", border: "1px solid var(--line)", background: "#fff", fontSize: "13px" }}
               >
-                <option value="">Назначить позже</option>
+                <option value="">Пул перевозчиков (помашинно в ТТН)</option>
                 {carriers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.shortName || c.name}
+                    {c.shortName || c.name} (основной)
                   </option>
                 ))}
               </select>
+              <span style={{ fontSize: "10px", color: "var(--soil-soft)", marginTop: "4px", display: "block", lineHeight: 1.3 }}>
+                💡 По одному договору привлекается множество перевозчиков. Конкретный перевозчик, авто и водитель указываются в каждой выписанной ТТН.
+              </span>
             </div>
 
             {/* Carrier Tariff */}
