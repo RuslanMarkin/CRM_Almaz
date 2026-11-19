@@ -49,6 +49,7 @@ import {
 } from "./db";
 import { deleteAttachmentObject, uploadAttachment, usesS3AttachmentStorage } from "./attachmentStorage";
 import { isDaDataConfigured, lookupBankByBik } from "./bankLookupService";
+import { lookupPartyByInn } from "./partyLookupService";
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
@@ -675,6 +676,19 @@ export const appRouter = router({
       .input(z.object({ bik: z.string() }))
       .query(async ({ input }) => {
         return await lookupBankByBik(input.bik);
+      }),
+    status: publicProcedure.query(() => {
+      return {
+        dadataConfigured: isDaDataConfigured(),
+      };
+    }),
+  }),
+
+  party: router({
+    lookupByInn: publicProcedure
+      .input(z.object({ inn: z.string() }))
+      .query(async ({ input }) => {
+        return await lookupPartyByInn(input.inn);
       }),
     status: publicProcedure.query(() => {
       return {

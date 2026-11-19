@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScanAttachments } from "@/components/ScanAttachments";
 import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
@@ -9,6 +9,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { DealDeskModal, type DealDeskSubmission } from "@/components/DealDeskModal";
 import { AddContractSpecificationModal, type ContractRef, type SpecEditingData } from "@/components/AddContractSpecificationModal";
 import { useBankLookup } from "@/hooks/useBankLookup";
+import { usePartyLookup, type PartyLookupResult } from "@/hooks/usePartyLookup";
 import Waybills from "./Waybills";
 import Contracts from "./Contracts";
 import Specifications from "./Specifications";
@@ -1964,6 +1965,89 @@ function DealFormModal({
   );
 }
 
+function getPartySourceLabel(source: PartyLookupResult["source"]) {
+  if (source === "dadata") return "DaData API";
+  if (source === "egrul") return "ЕГРЮЛ ФНС";
+  return "Справочник ИНН";
+}
+
+function getPartyStatusLabel(status?: PartyLookupResult["status"]) {
+  if (!status || status === "ACTIVE") return null;
+  if (status === "LIQUIDATING") return "в стадии ликвидации";
+  if (status === "LIQUIDATED") return "ликвидирована";
+  if (status === "BANKRUPT") return "банкротство";
+  if (status === "REORGANIZING") return "реорганизация";
+  return null;
+}
+
+function applyPartyToCounterpartyForm(
+  party: PartyLookupResult,
+  currentForm: CounterpartyFormState
+): CounterpartyFormState {
+  const nextAuthorityBasis =
+    (!currentForm.authorityBasis.trim() ||
+      currentForm.authorityBasis === "Устав" ||
+      currentForm.authorityBasis.startsWith("Свидетельство")) &&
+    party.authorityBasis
+      ? party.authorityBasis
+      : currentForm.authorityBasis;
+
+  return {
+    ...currentForm,
+    name: party.name || currentForm.name,
+    shortName: party.shortName || currentForm.shortName,
+    type: party.type,
+    inn: party.inn || currentForm.inn,
+    kpp: party.type === "sole_trader" ? "" : party.kpp || currentForm.kpp,
+    ogrn: party.ogrn || currentForm.ogrn,
+    okpo: party.okpo || currentForm.okpo,
+    region: party.region || currentForm.region,
+    profile: !currentForm.profile.trim() && party.okvedName ? party.okvedName : currentForm.profile,
+    representativeName: party.representativeName || currentForm.representativeName,
+    representativePosition: party.representativePosition || currentForm.representativePosition,
+    authorityBasis: nextAuthorityBasis,
+    legalAddress: party.legalAddress || currentForm.legalAddress,
+    postalAddress:
+      !currentForm.postalAddress.trim() && party.legalAddress
+        ? party.legalAddress
+        : currentForm.postalAddress,
+    actualAddress:
+      !currentForm.actualAddress.trim() && party.legalAddress
+        ? party.legalAddress
+        : currentForm.actualAddress,
+  };
+}
+
+function applyPartyToOrganizationForm(
+  party: PartyLookupResult,
+  currentForm: OrganizationFormState
+): OrganizationFormState {
+  const nextAuthorityBasis =
+    (!currentForm.authorityBasis.trim() ||
+      currentForm.authorityBasis === "Устав" ||
+      currentForm.authorityBasis.startsWith("Свидетельство")) &&
+    party.authorityBasis
+      ? party.authorityBasis
+      : currentForm.authorityBasis;
+
+  return {
+    ...currentForm,
+    name: party.name || currentForm.name,
+    shortName: party.shortName || currentForm.shortName,
+    inn: party.inn || currentForm.inn,
+    kpp: party.type === "sole_trader" ? "" : party.kpp || currentForm.kpp,
+    ogrn: party.ogrn || currentForm.ogrn,
+    representativeName: party.representativeName || currentForm.representativeName,
+    representativePosition: party.representativePosition || currentForm.representativePosition,
+    authorityBasis: nextAuthorityBasis,
+    legalAddress: party.legalAddress || currentForm.legalAddress,
+    postalAddress:
+      !currentForm.postalAddress.trim() && party.legalAddress
+        ? party.legalAddress
+        : currentForm.postalAddress,
+  };
+}
+
 function CounterpartyFormModal({
   form,
   editing,
@@ -1979,8 +2063,38 @@ function CounterpartyFormModal({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const formRef = useRef(form);
+  formRef.current = form;
   const setField = (key: keyof CounterpartyFormState, value: string) => onChange({ ...form, [key]: value });
   const { lookup: lookupBank, loading: bankLoading, bankInfo, error: bankError, reset: resetBank } = useBankLookup();
+  const { lookup: lookupParty, loading: partyLoading, partyInfo, error: partyError, reset: resetParty } = usePartyLookup();
+
+  const cleanInn = form.inn.replace(/\D/g, "");
+
+  const handleInnChange = async (innValue: string) => {
+    const nextForm = { ...formRef.current, inn: innValue };
+    formRef.current = nextForm;
+    onChange(nextForm);
+    const clean = innValue.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupParty(clean);
+      if (party && formRef.current.inn.replace(/\D/g, "") === clean) {
+        onChange(applyPartyToCounterpartyForm(party, formRef.current));
+      }
+    } else if (partyInfo || partyError) {
+      resetParty();
+    }
+  };
+
+  const handleManualInnLookup = async () => {
+    const clean = formRef.current.inn.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupParty(clean);
+      if (party && formRef.current.inn.replace(/\D/g, "") === clean) {
+        onChange(applyPartyToCounterpartyForm(party, formRef.current));
+      }
+    }
+  };
 
   const handleBikChange = async (bikValue: string) => {
     setField("bankBik", bikValue);
@@ -2041,12 +2155,65 @@ function CounterpartyFormModal({
         </div>
 
         <div className="agro-form-section">
-          <h3>Реквизиты</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <h3 style={{ margin: 0 }}>Реквизиты</h3>
+            {(cleanInn.length === 10 || cleanInn.length === 12) && (
+              <button
+                type="button"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--brand, #1b4d3e)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px 6px",
+                  textDecoration: "underline",
+                }}
+                onClick={handleManualInnLookup}
+                disabled={partyLoading}
+              >
+                {partyLoading ? "Поиск..." : "Найти по ИНН (DaData)"}
+              </button>
+            )}
+          </div>
           <div className="agro-form-grid agro-form-grid-four">
-            <label className="agro-field"><span>ИНН</span><input value={form.inn} maxLength={12} onChange={(event) => setField("inn", event.target.value)} /></label>
+            <label className="agro-field">
+              <span>ИНН</span>
+              <input
+                value={form.inn}
+                maxLength={12}
+                placeholder="10 или 12 цифр"
+                onChange={(event) => handleInnChange(event.target.value)}
+              />
+            </label>
             <label className="agro-field"><span>КПП</span><input value={form.kpp} maxLength={9} onChange={(event) => setField("kpp", event.target.value)} /></label>
             <label className="agro-field"><span>ОГРН / ОГРНИП</span><input value={form.ogrn} maxLength={15} onChange={(event) => setField("ogrn", event.target.value)} /></label>
             <label className="agro-field"><span>ОКПО</span><input value={form.okpo} maxLength={10} onChange={(event) => setField("okpo", event.target.value)} /></label>
+
+            {partyLoading && (
+              <div className="agro-bank-hint agro-bank-loading">
+                <span>Поиск организации по ИНН через DaData / ЕГРЮЛ...</span>
+              </div>
+            )}
+            {partyInfo && (
+              <div className="agro-bank-hint agro-bank-found">
+                <div>
+                  <strong>{partyInfo.shortName || partyInfo.name}</strong>
+                  {partyInfo.ogrn ? <span> · ОГРН {partyInfo.ogrn}</span> : null}
+                  {partyInfo.representativeName ? <span> · {partyInfo.representativeName}</span> : null}
+                  {getPartyStatusLabel(partyInfo.status) ? (
+                    <span style={{ color: "#b91c1c", fontWeight: 600 }}> · {getPartyStatusLabel(partyInfo.status)}</span>
+                  ) : null}
+                </div>
+                <span className="agro-bank-source">{getPartySourceLabel(partyInfo.source)}</span>
+              </div>
+            )}
+            {partyError && (
+              <div className="agro-bank-hint agro-bank-error">
+                <span>{partyError}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2179,8 +2346,38 @@ function OrganizationProfileModal({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const formRef = useRef(form);
+  formRef.current = form;
   const setField = (key: keyof OrganizationFormState, value: string) => onChange({ ...form, [key]: value });
   const { lookup: lookupBank, loading: bankLoading, bankInfo, error: bankError, reset: resetBank } = useBankLookup();
+  const { lookup: lookupParty, loading: partyLoading, partyInfo, error: partyError, reset: resetParty } = usePartyLookup();
+
+  const cleanInn = form.inn.replace(/\D/g, "");
+
+  const handleInnChange = async (innValue: string) => {
+    const nextForm = { ...formRef.current, inn: innValue };
+    formRef.current = nextForm;
+    onChange(nextForm);
+    const clean = innValue.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupParty(clean);
+      if (party && formRef.current.inn.replace(/\D/g, "") === clean) {
+        onChange(applyPartyToOrganizationForm(party, formRef.current));
+      }
+    } else if (partyInfo || partyError) {
+      resetParty();
+    }
+  };
+
+  const handleManualInnLookup = async () => {
+    const clean = formRef.current.inn.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupParty(clean);
+      if (party && formRef.current.inn.replace(/\D/g, "") === clean) {
+        onChange(applyPartyToOrganizationForm(party, formRef.current));
+      }
+    }
+  };
 
   const handleBikChange = async (bikValue: string) => {
     setField("bankBik", bikValue);
@@ -2223,13 +2420,66 @@ function OrganizationProfileModal({
           <button type="button" className="agro-icon-button" onClick={onClose} aria-label="Закрыть форму" title="Закрыть">×</button>
         </div>
         <div className="agro-form-section">
-          <h3>Реквизиты организации</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <h3 style={{ margin: 0 }}>Реквизиты организации</h3>
+            {(cleanInn.length === 10 || cleanInn.length === 12) && (
+              <button
+                type="button"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--brand, #1b4d3e)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px 6px",
+                  textDecoration: "underline",
+                }}
+                onClick={handleManualInnLookup}
+                disabled={partyLoading}
+              >
+                {partyLoading ? "Поиск..." : "Найти по ИНН (DaData)"}
+              </button>
+            )}
+          </div>
           <div className="agro-form-grid">
             <label className="agro-field agro-field-wide"><span>Полное наименование *</span><input value={form.name} onChange={(event) => setField("name", event.target.value)} /></label>
             <label className="agro-field"><span>Краткое наименование</span><input value={form.shortName} onChange={(event) => setField("shortName", event.target.value)} /></label>
-            <label className="agro-field"><span>ИНН</span><input value={form.inn} maxLength={12} onChange={(event) => setField("inn", event.target.value)} /></label>
+            <label className="agro-field">
+              <span>ИНН</span>
+              <input
+                value={form.inn}
+                maxLength={12}
+                placeholder="10 или 12 цифр"
+                onChange={(event) => handleInnChange(event.target.value)}
+              />
+            </label>
             <label className="agro-field"><span>КПП</span><input value={form.kpp} maxLength={9} onChange={(event) => setField("kpp", event.target.value)} /></label>
             <label className="agro-field"><span>ОГРН</span><input value={form.ogrn} maxLength={15} onChange={(event) => setField("ogrn", event.target.value)} /></label>
+
+            {partyLoading && (
+              <div className="agro-bank-hint agro-bank-loading">
+                <span>Поиск организации по ИНН через DaData / ЕГРЮЛ...</span>
+              </div>
+            )}
+            {partyInfo && (
+              <div className="agro-bank-hint agro-bank-found">
+                <div>
+                  <strong>{partyInfo.shortName || partyInfo.name}</strong>
+                  {partyInfo.ogrn ? <span> · ОГРН {partyInfo.ogrn}</span> : null}
+                  {partyInfo.representativeName ? <span> · {partyInfo.representativeName}</span> : null}
+                  {getPartyStatusLabel(partyInfo.status) ? (
+                    <span style={{ color: "#b91c1c", fontWeight: 600 }}> · {getPartyStatusLabel(partyInfo.status)}</span>
+                  ) : null}
+                </div>
+                <span className="agro-bank-source">{getPartySourceLabel(partyInfo.source)}</span>
+              </div>
+            )}
+            {partyError && (
+              <div className="agro-bank-hint agro-bank-error">
+                <span>{partyError}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="agro-form-section">
@@ -2591,7 +2841,7 @@ const agroStyles = `
 .agro-field-wide{grid-column:span 2;}
 .agro-field input,.agro-field select,.agro-field textarea{width:100%; border:1px solid var(--line); border-radius:6px; padding:9px 10px; background:#fff; color:var(--ink); font:13px var(--body);}
 .agro-field textarea{resize:vertical;}
-.agro-bank-hint{grid-column:span 2; font-size:12px; font-weight:500; border-radius:6px; padding:7px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
+.agro-bank-hint{grid-column:1 / -1; font-size:12px; font-weight:500; border-radius:6px; padding:7px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
 .agro-bank-loading{background:#f0f9ff; color:#0369a1; border:1px solid #bae6fd;}
 .agro-bank-found{background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;}
 .agro-bank-error{background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;}

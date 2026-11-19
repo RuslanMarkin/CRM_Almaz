@@ -7,6 +7,7 @@ import { generateContractPrintHtml } from "../contractPrintService";
 import { generateWaybillPrintHtml } from "../waybillPrintService";
 import { generateWaybillXlsx } from "../waybillXlsxService";
 import { lookupBankByBik } from "../bankLookupService";
+import { lookupPartyByInn } from "../partyLookupService";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
@@ -251,6 +252,22 @@ async function startServer() {
     } catch (err) {
       console.error("Bank lookup error:", err);
       res.status(500).json({ error: "Ошибка при получении данных банка" });
+    }
+  });
+
+  // Company / IE details lookup by INN (DaData / local catalog / EGRUL)
+  app.get("/api/party/:inn", async (req, res) => {
+    try {
+      const party = await lookupPartyByInn(req.params.inn);
+      if (!party) {
+        res.status(404).json({ error: "Организация не найдена по указанному ИНН" });
+        return;
+      }
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.json(party);
+    } catch (err) {
+      console.error("Party lookup error:", err);
+      res.status(500).json({ error: "Ошибка при получении данных организации" });
     }
   });
 

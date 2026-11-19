@@ -26,6 +26,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link, useSearch } from "wouter";
 import { useBankLookup } from "@/hooks/useBankLookup";
+import { usePartyLookup, type PartyLookupResult } from "@/hooks/usePartyLookup";
 
 type CPType = "legal" | "individual" | "sole_trader";
 type CounterpartyRole = "seller" | "buyer" | "carrier";
@@ -86,6 +87,43 @@ export default function Counterparties() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const utils = trpc.useUtils();
   const { lookup: lookupBank, loading: bankLoading, bankInfo, error: bankError, reset: resetBank } = useBankLookup();
+  const { lookup: lookupParty, loading: partyLoading, partyInfo, error: partyError, reset: resetParty } = usePartyLookup();
+
+  const applyPartyToForm = (prev: FormState, party: PartyLookupResult): FormState => ({
+    ...prev,
+    name: party.name || prev.name,
+    shortName: party.shortName || prev.shortName,
+    type: party.type,
+    inn: party.inn || prev.inn,
+    kpp: party.type === "sole_trader" ? "" : party.kpp || prev.kpp,
+    ogrn: party.ogrn || prev.ogrn,
+    okpo: party.okpo || prev.okpo,
+    legalAddress: party.legalAddress || prev.legalAddress,
+    actualAddress: !prev.actualAddress.trim() && party.legalAddress ? party.legalAddress : prev.actualAddress,
+  });
+
+  const handleInnChange = async (innValue: string) => {
+    setForm((prev) => ({ ...prev, inn: innValue }));
+    const clean = innValue.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupParty(clean);
+      if (party) {
+        setForm((prev) => (prev.inn.replace(/\D/g, "") === clean ? applyPartyToForm(prev, party) : prev));
+      }
+    } else if (partyInfo || partyError) {
+      resetParty();
+    }
+  };
+
+  const handleManualInnLookup = async () => {
+    const clean = form.inn.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupParty(clean);
+      if (party) {
+        setForm((prev) => (prev.inn.replace(/\D/g, "") === clean ? applyPartyToForm(prev, party) : prev));
+      }
+    }
+  };
 
   const handleBikChange = async (bikValue: string) => {
     setForm((prev) => ({ ...prev, bankBik: bikValue }));
@@ -157,6 +195,7 @@ export default function Counterparties() {
 
   function openCreate() {
     resetBank();
+    resetParty();
     setEditId(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -165,6 +204,7 @@ export default function Counterparties() {
   function openEdit(cp: typeof list extends (infer T)[] | undefined ? T : never) {
     if (!cp) return;
     resetBank();
+    resetParty();
     setEditId((cp as any).id);
     setForm({
       name: (cp as any).name ?? "",
@@ -211,6 +251,8 @@ export default function Counterparties() {
       return;
     }
     if (hasAutoOpenedCreate) return;
+    resetBank();
+    resetParty();
     setEditId(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -412,11 +454,29 @@ export default function Counterparties() {
 
             {/* Requisites */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Реквизиты</p>
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Реквизиты</p>
+                {(form.inn.replace(/\D/g, "").length === 10 || form.inn.replace(/\D/g, "").length === 12) && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline font-medium"
+                    onClick={handleManualInnLookup}
+                    disabled={partyLoading}
+                  >
+                    {partyLoading ? "Поиск..." : "Найти по ИНН (DaData)"}
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <Label>ИНН</Label>
-                  <Input value={form.inn} onChange={f("inn")} placeholder="7700000000" className="mt-1 font-mono" maxLength={12} />
+                  <Input
+                    value={form.inn}
+                    onChange={(e) => handleInnChange(e.target.value)}
+                    placeholder="7700000000"
+                    className="mt-1 font-mono"
+                    maxLength={12}
+                  />
                 </div>
                 <div>
                   <Label>ОГРН</Label>
@@ -430,6 +490,34 @@ export default function Counterparties() {
                   <Label>ОКПО</Label>
                   <Input value={form.okpo} onChange={f("okpo")} placeholder="12345678" className="mt-1 font-mono" maxLength={10} />
                 </div>
+
+                {partyLoading && (
+                  <div className="col-span-2 md:col-span-4 text-xs bg-blue-50 text-blue-700 p-2 rounded border border-blue-200">
+                    Поиск организации по ИНН через DaData / ЕГРЮЛ...
+                  </div>
+                )}
+                {partyInfo && (
+                  <div className="col-span-2 md:col-span-4 text-xs bg-green-50 text-green-800 p-2 rounded border border-green-200 flex justify-between items-center gap-2 flex-wrap">
+                    <div>
+                      <span className="font-semibold">{partyInfo.shortName || partyInfo.name}</span>
+                      {partyInfo.ogrn ? <span className="ml-2 text-muted-foreground font-mono">ОГРН: {partyInfo.ogrn}</span> : null}
+                      {partyInfo.representativeName ? <span className="ml-2 text-muted-foreground">· {partyInfo.representativeName}</span> : null}
+                      {partyInfo.status && partyInfo.status !== "ACTIVE" ? (
+                        <span className="ml-2 text-red-700 font-semibold">
+                          · {partyInfo.status === "LIQUIDATED" ? "ликвидирована" : partyInfo.status === "LIQUIDATING" ? "ликвидация" : partyInfo.status === "BANKRUPT" ? "банкротство" : "реорганизация"}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-black/5">
+                      {partyInfo.source === "dadata" ? "DaData API" : partyInfo.source === "egrul" ? "ЕГРЮЛ ФНС" : "Справочник ИНН"}
+                    </span>
+                  </div>
+                )}
+                {partyError && (
+                  <div className="col-span-2 md:col-span-4 text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                    {partyError}
+                  </div>
+                )}
               </div>
             </div>
 
