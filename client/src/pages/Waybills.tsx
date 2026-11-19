@@ -44,6 +44,7 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link, useSearch } from "wouter";
+import { usePartyLookup, type PartyLookupResult } from "@/hooks/usePartyLookup";
 
 type WaybillStatus = "draft" | "in_transit" | "delivered" | "cancelled";
 type PartyRole = "supplier" | "buyer" | "carrier" | "vehicleOwner" | "payer";
@@ -329,6 +330,13 @@ export default function Waybills() {
   const [closingWaybill, setClosingWaybill] = useState<any | null>(null);
   const [closureForm, setClosureForm] = useState<ClosureForm>(createEmptyClosureForm);
   const utils = trpc.useUtils();
+  const {
+    lookup: lookupQuickParty,
+    loading: quickPartyLoading,
+    partyInfo: quickPartyInfo,
+    error: quickPartyError,
+    reset: resetQuickParty,
+  } = usePartyLookup();
 
   const { data: list, isLoading } = trpc.waybills.list.useQuery({
     search: search || undefined,
@@ -633,7 +641,48 @@ export default function Waybills() {
     });
   }
 
+  function applyQuickPartyData(previous: QuickPartyForm, party: PartyLookupResult): QuickPartyForm {
+    return {
+      ...previous,
+      name: party.name || previous.name,
+      shortName: party.shortName || previous.shortName,
+      type: party.type,
+      inn: party.inn || previous.inn,
+      okpo: party.okpo || previous.okpo,
+      legalAddress: party.legalAddress || previous.legalAddress,
+      actualAddress: !previous.actualAddress.trim() && party.legalAddress ? party.legalAddress : previous.actualAddress,
+    };
+  }
+
+  async function handleQuickPartyInnChange(innValue: string) {
+    setQuickParty((previous) => ({ ...previous, inn: innValue }));
+    const clean = innValue.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupQuickParty(clean);
+      if (party) {
+        setQuickParty((previous) =>
+          previous.inn.replace(/\D/g, "") === clean ? applyQuickPartyData(previous, party) : previous
+        );
+      }
+    } else if (quickPartyInfo || quickPartyError) {
+      resetQuickParty();
+    }
+  }
+
+  async function handleManualQuickPartyInnLookup() {
+    const clean = quickParty.inn.replace(/\D/g, "");
+    if (clean.length === 10 || clean.length === 12) {
+      const party = await lookupQuickParty(clean);
+      if (party) {
+        setQuickParty((previous) =>
+          previous.inn.replace(/\D/g, "") === clean ? applyQuickPartyData(previous, party) : previous
+        );
+      }
+    }
+  }
+
   function openQuickParty(role: PartyRole) {
+    resetQuickParty();
     setQuickPartyRole(role);
     setQuickParty(quickPartyEmpty);
     setQuickPartyOpen(true);
@@ -1216,8 +1265,50 @@ export default function Waybills() {
                 <SelectContent><SelectItem value="legal">Организация</SelectItem><SelectItem value="sole_trader">ИП</SelectItem><SelectItem value="individual">Физлицо</SelectItem></SelectContent>
               </Select>
             </div>
-            <div><Label>ИНН</Label><Input value={quickParty.inn} onChange={(event) => setQuickParty((previous) => ({ ...previous, inn: event.target.value }))} className="mt-1 font-mono" /></div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <Label>ИНН</Label>
+                {(quickParty.inn.replace(/\D/g, "").length === 10 || quickParty.inn.replace(/\D/g, "").length === 12) && (
+                  <button
+                    type="button"
+                    onClick={handleManualQuickPartyInnLookup}
+                    disabled={quickPartyLoading}
+                    className="text-xs text-primary hover:underline font-medium"
+                  >
+                    {quickPartyLoading ? "Поиск..." : "Найти по ИНН"}
+                  </button>
+                )}
+              </div>
+              <Input
+                value={quickParty.inn}
+                onChange={(event) => handleQuickPartyInnChange(event.target.value)}
+                placeholder="10 или 12 цифр"
+                maxLength={12}
+                className="mt-1 font-mono"
+              />
+            </div>
             <div><Label>ОКПО</Label><Input value={quickParty.okpo} onChange={(event) => setQuickParty((previous) => ({ ...previous, okpo: event.target.value }))} className="mt-1 font-mono" /></div>
+            {quickPartyLoading && (
+              <div className="col-span-2 text-xs bg-blue-50 text-blue-700 p-2 rounded border border-blue-200">
+                Поиск организации по ИНН через DaData / ЕГРЮЛ...
+              </div>
+            )}
+            {quickPartyInfo && (
+              <div className="col-span-2 text-xs bg-green-50 text-green-800 p-2 rounded border border-green-200 flex justify-between items-center gap-2 flex-wrap">
+                <div>
+                  <span className="font-semibold">{quickPartyInfo.shortName || quickPartyInfo.name}</span>
+                  {quickPartyInfo.ogrn ? <span className="ml-2 text-muted-foreground font-mono">ОГРН: {quickPartyInfo.ogrn}</span> : null}
+                </div>
+                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-black/5">
+                  {quickPartyInfo.source === "dadata" ? "DaData API" : quickPartyInfo.source === "egrul" ? "ЕГРЮЛ ФНС" : "Справочник ИНН"}
+                </span>
+              </div>
+            )}
+            {quickPartyError && (
+              <div className="col-span-2 text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                {quickPartyError}
+              </div>
+            )}
             <div className="col-span-2"><Label>Юридический адрес</Label><Input value={quickParty.legalAddress} onChange={(event) => setQuickParty((previous) => ({ ...previous, legalAddress: event.target.value }))} className="mt-1" /></div>
             <div className="col-span-2"><Label>Фактический адрес</Label><Input value={quickParty.actualAddress} onChange={(event) => setQuickParty((previous) => ({ ...previous, actualAddress: event.target.value }))} className="mt-1" /></div>
             <div><Label>Телефон</Label><Input value={quickParty.phone} onChange={(event) => setQuickParty((previous) => ({ ...previous, phone: event.target.value }))} className="mt-1" /></div>
