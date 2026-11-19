@@ -99,6 +99,7 @@ export const deals = mysqlTable("deals", {
   sellerId: int("sellerId").notNull(),
   buyerId: int("buyerId").notNull(),
   carrierId: int("carrierId"),
+  carrierIds: text("carrierIds"),
   cargoName: varchar("cargoName", { length: 512 }).notNull(),
   cargoGrade: varchar("cargoGrade", { length: 128 }),
   plannedVolume: decimal("plannedVolume", { precision: 10, scale: 3 }),

@@ -29,16 +29,19 @@ let _db: ReturnType<typeof drizzle> | null = null;
 
 export type RecoverableEntity = "counterparty" | "contract" | "deal" | "specification" | "waybill" | "attachment";
 
-async function writeRecoveryAudit(input: {
-  entityType: RecoverableEntity;
-  entityId: number;
-  action: "delete" | "restore";
-  actor: string;
-  snapshot: unknown;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  await db.insert(recoveryAuditLog).values({
+async function writeRecoveryAudit(
+  input: {
+    entityType: RecoverableEntity;
+    entityId: number;
+    action: "delete" | "restore";
+    actor: string;
+    snapshot: unknown;
+  },
+  tx?: any
+) {
+  const executor = tx || (await getDb());
+  if (!executor) throw new Error("DB not available");
+  await executor.insert(recoveryAuditLog).values({
     ...input,
     snapshot: JSON.stringify(input.snapshot),
   });
@@ -256,11 +259,25 @@ export async function getDealById(id: number) {
   return result[0];
 }
 
+export async function getDealByNumber(number: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(deals).where(and(eq(deals.number, number), isNull(deals.deletedAt))).limit(1);
+  return result[0];
+}
+
 export async function createDeal(data: InsertDeal) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(deals).values(data);
-  return getDealById(Number(result[0].insertId));
+  try {
+    const result = await db.insert(deals).values(data);
+    return getDealById(Number(result[0].insertId));
+  } catch (error: any) {
+    if (error?.code === "ER_DUP_ENTRY" || error?.cause?.code === "ER_DUP_ENTRY") {
+      throw new Error(`Сделка с номером «${data.number}» уже существует. Пожалуйста, укажите другой номер.`);
+    }
+    throw error;
+  }
 }
 
 export async function updateDeal(id: number, data: Partial<InsertDeal>) {
@@ -380,7 +397,21 @@ export async function getDocumentAttachments(
   if (filters?.documentKind) conditions.push(eq(documentAttachments.documentKind, filters.documentKind));
   if (filters?.specificationId) conditions.push(eq(documentAttachments.specificationId, filters.specificationId));
   return db
-    .select()
+    .select({
+      id: documentAttachments.id,
+      entityType: documentAttachments.entityType,
+      entityId: documentAttachments.entityId,
+      documentKind: documentAttachments.documentKind,
+      specificationId: documentAttachments.specificationId,
+      fileName: documentAttachments.fileName,
+      contentType: documentAttachments.contentType,
+      size: documentAttachments.size,
+      storageKey: documentAttachments.storageKey,
+      dataUrl: sql<string | null>`NULL`,
+      createdAt: documentAttachments.createdAt,
+      updatedAt: documentAttachments.updatedAt,
+      deletedAt: documentAttachments.deletedAt,
+    })
     .from(documentAttachments)
     .where(and(...conditions))
     .orderBy(desc(documentAttachments.createdAt));
@@ -439,19 +470,20 @@ export async function deleteDocumentAttachment(id: number, actor: string) {
 
 // ─── Waybills ────────────────────────────────────────────────────────────────
 
-export async function getNextWaybillNumber(): Promise<string> {
+export async function getNextWaybillNumber(tx?: any): Promise<string> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const year = new Date().getFullYear();
-  return db.transaction(async (tx) => {
-    await tx
+
+  const allocate = async (executor: any) => {
+    await executor
       .insert(waybillCounter)
       .values({ year, lastNumber: 1 })
       .onDuplicateKeyUpdate({
         set: { lastNumber: sql`${waybillCounter.lastNumber} + 1` },
       });
 
-    const [counter] = await tx
+    const [counter] = await executor
       .select()
       .from(waybillCounter)
       .where(eq(waybillCounter.year, year))
@@ -459,7 +491,12 @@ export async function getNextWaybillNumber(): Promise<string> {
 
     if (!counter) throw new Error("Failed to allocate waybill number");
     return `${year}-${String(counter.lastNumber).padStart(3, "0")}`;
-  });
+  };
+
+  if (tx) {
+    return allocate(tx);
+  }
+  return db.transaction(async (innerTx) => allocate(innerTx));
 }
 
 export async function getWaybills(opts?: {
@@ -624,25 +661,75 @@ async function hydrateWaybillData(data: Partial<InsertWaybill>) {
   return hydrated;
 }
 
+export async function syncSpecificationShippedVolume(tx: any, specificationId: number) {
+  const [total] = await tx
+    .select({ total: sql<string>`coalesce(sum(${waybills.dispatchedWeight}), 0)` })
+    .from(waybills)
+    .where(
+      and(
+        eq(waybills.specificationId, specificationId),
+        eq(waybills.status, "delivered"),
+        isNull(waybills.deletedAt)
+      )
+    );
+
+  await tx
+    .update(specifications)
+    .set({ volumeShipped: String(total?.total ?? "0") })
+    .where(eq(specifications.id, specificationId));
+}
+
 export async function createWaybill(data: Omit<InsertWaybill, "number">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const hydrated = await hydrateWaybillData(data);
-  const number = await getNextWaybillNumber();
-  await db.insert(waybills).values({ ...hydrated, number });
-  const created = await db
-    .select()
-    .from(waybills)
-    .where(and(eq(waybills.number, number), isNull(waybills.deletedAt)))
-    .limit(1);
-  return created[0];
+
+  return db.transaction(async (tx) => {
+    const number = await getNextWaybillNumber(tx);
+    await tx.insert(waybills).values({ ...hydrated, number });
+    const created = await tx
+      .select()
+      .from(waybills)
+      .where(and(eq(waybills.number, number), isNull(waybills.deletedAt)))
+      .limit(1);
+
+    if (created[0]?.status === "delivered" && created[0].specificationId) {
+      await syncSpecificationShippedVolume(tx, created[0].specificationId);
+    }
+    return created[0];
+  });
 }
 
 export async function updateWaybill(id: number, data: Partial<InsertWaybill>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const hydrated = await hydrateWaybillData(data);
-  await db.update(waybills).set(hydrated).where(and(eq(waybills.id, id), isNull(waybills.deletedAt)));
+
+  await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(waybills)
+      .where(and(eq(waybills.id, id), isNull(waybills.deletedAt)))
+      .limit(1);
+
+    if (!existing) return;
+
+    await tx.update(waybills).set(hydrated).where(and(eq(waybills.id, id), isNull(waybills.deletedAt)));
+
+    const oldSpecId = existing.specificationId;
+    const newSpecId = hydrated.specificationId !== undefined ? hydrated.specificationId : oldSpecId;
+    const wasDelivered = existing.status === "delivered";
+    const isDelivered = hydrated.status !== undefined ? hydrated.status === "delivered" : wasDelivered;
+
+    if (wasDelivered || isDelivered) {
+      if (oldSpecId) {
+        await syncSpecificationShippedVolume(tx, oldSpecId);
+      }
+      if (newSpecId && newSpecId !== oldSpecId) {
+        await syncSpecificationShippedVolume(tx, newSpecId);
+      }
+    }
+  });
 }
 
 export async function closeWaybill(
@@ -671,15 +758,7 @@ export async function closeWaybill(
       .where(eq(waybills.id, id));
 
     if (waybill.specificationId) {
-      const [total] = await tx
-        .select({ total: sql<string>`coalesce(sum(${waybills.dispatchedWeight}), 0)` })
-        .from(waybills)
-        .where(and(eq(waybills.specificationId, waybill.specificationId), eq(waybills.status, "delivered"), isNull(waybills.deletedAt)));
-
-      await tx
-        .update(specifications)
-        .set({ volumeShipped: String(total?.total ?? "0") })
-        .where(eq(specifications.id, waybill.specificationId));
+      await syncSpecificationShippedVolume(tx, waybill.specificationId);
     }
   });
 
@@ -695,14 +774,7 @@ export async function deleteWaybill(id: number, actor: string) {
     await tx.update(waybills).set({ deletedAt: new Date() }).where(eq(waybills.id, id));
 
     if (waybill?.status === "delivered" && waybill.specificationId) {
-      const [total] = await tx
-        .select({ total: sql<string>`coalesce(sum(${waybills.dispatchedWeight}), 0)` })
-        .from(waybills)
-        .where(and(eq(waybills.specificationId, waybill.specificationId), eq(waybills.status, "delivered"), isNull(waybills.deletedAt)));
-      await tx
-        .update(specifications)
-        .set({ volumeShipped: String(total?.total ?? "0") })
-        .where(eq(specifications.id, waybill.specificationId));
+      await syncSpecificationShippedVolume(tx, waybill.specificationId);
     }
   });
   await writeRecoveryAudit({ entityType: "waybill", entityId: id, action: "delete", actor, snapshot: waybill });
@@ -732,40 +804,39 @@ export async function getDeletedRecords() {
 export async function restoreDeletedRecord(entityType: RecoverableEntity, id: number, actor: string) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  let record: Record<string, unknown> | undefined;
-  let restoredWaybill: Awaited<ReturnType<typeof getWaybillById>> | undefined;
 
-  if (entityType === "counterparty") {
-    [record] = await db.select().from(counterparties).where(eq(counterparties.id, id)).limit(1);
-    if (record?.deletedAt) await db.update(counterparties).set({ deletedAt: null }).where(eq(counterparties.id, id));
-  } else if (entityType === "contract") {
-    [record] = await db.select().from(contracts).where(eq(contracts.id, id)).limit(1);
-    if (record?.deletedAt) await db.update(contracts).set({ deletedAt: null }).where(eq(contracts.id, id));
-  } else if (entityType === "deal") {
-    [record] = await db.select().from(deals).where(eq(deals.id, id)).limit(1);
-    if (record?.deletedAt) await db.update(deals).set({ deletedAt: null }).where(eq(deals.id, id));
-  } else if (entityType === "specification") {
-    [record] = await db.select().from(specifications).where(eq(specifications.id, id)).limit(1);
-    if (record?.deletedAt) await db.update(specifications).set({ deletedAt: null }).where(eq(specifications.id, id));
-  } else if (entityType === "attachment") {
-    [record] = await db.select().from(documentAttachments).where(eq(documentAttachments.id, id)).limit(1);
-    if (record?.deletedAt) await db.update(documentAttachments).set({ deletedAt: null }).where(eq(documentAttachments.id, id));
-  } else {
-    [restoredWaybill] = await db.select().from(waybills).where(eq(waybills.id, id)).limit(1);
-    record = restoredWaybill;
-    if (restoredWaybill?.deletedAt) await db.update(waybills).set({ deletedAt: null }).where(eq(waybills.id, id));
-  }
-  if (!record || !("deletedAt" in record) || !record.deletedAt) throw new Error("Запись не найдена в корзине");
+  return db.transaction(async (tx) => {
+    let record: Record<string, unknown> | undefined;
+    let restoredWaybill: Awaited<ReturnType<typeof getWaybillById>> | undefined;
 
-  if (entityType === "waybill" && restoredWaybill?.status === "delivered" && restoredWaybill.specificationId) {
-    const [total] = await db
-      .select({ total: sql<string>`coalesce(sum(${waybills.dispatchedWeight}), 0)` })
-      .from(waybills)
-      .where(and(eq(waybills.specificationId, restoredWaybill.specificationId), eq(waybills.status, "delivered"), isNull(waybills.deletedAt)));
-    await db.update(specifications).set({ volumeShipped: String(total?.total ?? "0") }).where(eq(specifications.id, restoredWaybill.specificationId));
-  }
-  await writeRecoveryAudit({ entityType, entityId: id, action: "restore", actor, snapshot: record });
-  return { success: true } as const;
+    if (entityType === "counterparty") {
+      [record] = await tx.select().from(counterparties).where(eq(counterparties.id, id)).limit(1);
+      if (record?.deletedAt) await tx.update(counterparties).set({ deletedAt: null }).where(eq(counterparties.id, id));
+    } else if (entityType === "contract") {
+      [record] = await tx.select().from(contracts).where(eq(contracts.id, id)).limit(1);
+      if (record?.deletedAt) await tx.update(contracts).set({ deletedAt: null }).where(eq(contracts.id, id));
+    } else if (entityType === "deal") {
+      [record] = await tx.select().from(deals).where(eq(deals.id, id)).limit(1);
+      if (record?.deletedAt) await tx.update(deals).set({ deletedAt: null }).where(eq(deals.id, id));
+    } else if (entityType === "specification") {
+      [record] = await tx.select().from(specifications).where(eq(specifications.id, id)).limit(1);
+      if (record?.deletedAt) await tx.update(specifications).set({ deletedAt: null }).where(eq(specifications.id, id));
+    } else if (entityType === "attachment") {
+      [record] = await tx.select().from(documentAttachments).where(eq(documentAttachments.id, id)).limit(1);
+      if (record?.deletedAt) await tx.update(documentAttachments).set({ deletedAt: null }).where(eq(documentAttachments.id, id));
+    } else {
+      [restoredWaybill] = await tx.select().from(waybills).where(eq(waybills.id, id)).limit(1);
+      record = restoredWaybill;
+      if (restoredWaybill?.deletedAt) await tx.update(waybills).set({ deletedAt: null }).where(eq(waybills.id, id));
+    }
+    if (!record || !("deletedAt" in record) || !record.deletedAt) throw new Error("Запись не найдена в корзине");
+
+    if (entityType === "waybill" && restoredWaybill?.status === "delivered" && restoredWaybill.specificationId) {
+      await syncSpecificationShippedVolume(tx, restoredWaybill.specificationId);
+    }
+    await writeRecoveryAudit({ entityType, entityId: id, action: "restore", actor, snapshot: record }, tx);
+    return { success: true } as const;
+  });
 }
 
 // ─── Stats for dashboard ─────────────────────────────────────────────────────

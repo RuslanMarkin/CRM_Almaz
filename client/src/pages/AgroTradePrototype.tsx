@@ -358,6 +358,17 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
       (specification) => specification.specification.id === waybill.specificationId,
     ));
 
+    const dealCarrierIds: number[] = [];
+    if (deal.carrierIds) {
+      try {
+        const parsed = JSON.parse(deal.carrierIds);
+        if (Array.isArray(parsed)) dealCarrierIds.push(...parsed.map(Number));
+      } catch {}
+    }
+    if (!dealCarrierIds.length && deal.carrierId) {
+      dealCarrierIds.push(deal.carrierId);
+    }
+
     // Fallbacks from deal participants if contracts exist
     const sellerContract = contracts.find((item) => item.contract.counterpartyId === deal.sellerId && item.contract.contractKind === "purchase");
     const buyerContract = contracts.find((item) => item.contract.counterpartyId === deal.buyerId && item.contract.contractKind === "sale");
@@ -420,12 +431,16 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               ? String(uniqueCarrierNames[0])
               : `${uniqueCarrierNames.length} перевозчиков в рейсах (${uniqueCarrierNames.slice(0, 2).join(", ")}${uniqueCarrierNames.length > 2 ? "..." : ""})`;
           }
-          if (deal.carrierId) {
-            return carriageContract ? `Назначен · Договор № ${carriageContract.contract.number}` : "Генеральный перевозчик назначен";
+          if (dealCarrierIds.length > 0) {
+            const names = dealCarrierIds
+              .map((id) => counterparties.find((c) => c.id === id)?.shortName || counterparties.find((c) => c.id === id)?.name)
+              .filter(Boolean);
+            if (names.length === 1) return `${names[0]} (перевозчик)`;
+            return `Назначено ${names.length} перевозчика (${names.slice(0, 2).join(", ")}${names.length > 2 ? "..." : ""})`;
           }
           return "Пул перевозчиков (помашинно в ТТН)";
         })(),
-        state: (deal.carrierId || linkedWaybills.some((w) => w.carrierName || w.carrierId)) ? ("complete" as const) : ("waiting" as const),
+        state: (dealCarrierIds.length > 0 || linkedWaybills.some((w) => w.carrierName || w.carrierId)) ? ("complete" as const) : ("waiting" as const),
       },
       {
         title: "Отгрузка",
@@ -530,11 +545,24 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
     setEditingDealId(deal.id);
     const tariffMatch = deal.notes?.match(/Тариф перевозки:\s*(\d+(?:\.\d+)?)/i);
     const carrierTariff = tariffMatch ? tariffMatch[1] : "1500";
+
+    const carrierIds: string[] = [];
+    if (deal.carrierIds) {
+      try {
+        const parsed = JSON.parse(deal.carrierIds);
+        if (Array.isArray(parsed)) carrierIds.push(...parsed.map(String));
+      } catch {}
+    }
+    if (!carrierIds.length && deal.carrierId) {
+      carrierIds.push(String(deal.carrierId));
+    }
+
     setDealDeskInitial({
       number: deal.number,
       sellerId: String(deal.sellerId),
       buyerId: String(deal.buyerId),
       carrierId: deal.carrierId ? String(deal.carrierId) : "",
+      carrierIds,
       cargoName: deal.cargoName,
       cargoGrade: deal.cargoGrade ?? "",
       plannedVolume: deal.plannedVolume ?? "",
@@ -555,11 +583,18 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
   async function handleDealDeskSubmit(params: DealDeskSubmission) {
     setDealDeskSaving(true);
     try {
+      const allCarrierIds = params.deal.carrierIds?.length
+        ? params.deal.carrierIds
+        : params.deal.carrierId
+          ? [params.deal.carrierId]
+          : [];
+
       const dealData = {
         number: params.deal.number,
         sellerId: params.deal.sellerId,
         buyerId: params.deal.buyerId,
-        carrierId: params.deal.carrierId,
+        carrierId: allCarrierIds[0] ?? null,
+        carrierIds: allCarrierIds,
         cargoName: params.deal.cargoName,
         cargoGrade: params.deal.cargoGrade,
         plannedVolume: params.deal.plannedVolume,
@@ -646,14 +681,18 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
             }
           }
 
-          // C. Carriage Contract (if carrier assigned)
-          if (params.deal.carrierId) {
+          // C. Carriage Contracts (for all assigned carriers)
+          for (let i = 0; i < allCarrierIds.length; i++) {
+            const cId = allCarrierIds[i];
+            const carrierCounterparty = counterparties.find((c) => c.id === cId);
+            const suffix = allCarrierIds.length > 1 ? `/${i + 1}` : "";
+            const carrierNameTag = carrierCounterparty?.shortName ? ` (${carrierCounterparty.shortName})` : "";
             await createContractMutation.mutateAsync({
-              number: `ДЛ-${params.deal.number}`,
-              counterpartyId: params.deal.carrierId,
+              number: `ДЛ-${params.deal.number}${suffix}`,
+              counterpartyId: cId,
               contractKind: "carriage",
               type: "service",
-              subject: `Перевозка зерна: ${params.deal.cargoName}`,
+              subject: `Перевозка зерна: ${params.deal.cargoName}${carrierNameTag}`,
               amount: vol && tPrice ? String(vol * tPrice) : undefined,
               status: "active",
             });
@@ -1684,7 +1723,24 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
             <div className="agro-deal-summary">
               <DetailItem label="Продавец" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.sellerId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.sellerId)?.name} />
               <DetailItem label="Покупатель" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.buyerId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.buyerId)?.name} />
-              <DetailItem label="Перевозчик" value={counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.carrierId)?.shortName || counterparties.find((counterparty) => counterparty.id === selectedDeal.deal.carrierId)?.name} />
+              <DetailItem
+                label="Перевозчики"
+                value={(() => {
+                  const cIds: number[] = [];
+                  if (selectedDeal.deal.carrierIds) {
+                    try {
+                      const parsed = JSON.parse(selectedDeal.deal.carrierIds);
+                      if (Array.isArray(parsed)) cIds.push(...parsed.map(Number));
+                    } catch {}
+                  }
+                  if (!cIds.length && selectedDeal.deal.carrierId) cIds.push(selectedDeal.deal.carrierId);
+                  if (!cIds.length) return "Пул перевозчиков (помашинно в ТТН)";
+                  const names = cIds
+                    .map((id) => counterparties.find((c) => c.id === id)?.shortName || counterparties.find((c) => c.id === id)?.name)
+                    .filter(Boolean);
+                  return names.join(", ") || "Перевозчик назначен";
+                })()}
+              />
               <DetailItem label="Плановый объём" value={formatTons(decimal(selectedDeal.deal.plannedVolume))} />
               <DetailItem label="Цена закупки" value={formatDealPrice(selectedDeal.deal.purchasePrice, selectedDeal.deal.currency)} />
               <DetailItem label="Цена реализации" value={formatDealPrice(selectedDeal.deal.salePrice, selectedDeal.deal.currency)} />
@@ -1763,6 +1819,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
         }}
         editingDealId={editingDealId}
         initialDeal={dealDeskInitial}
+        existingDeals={dealRecords}
         counterparties={counterparties}
         specifications={specifications}
         contracts={contracts}

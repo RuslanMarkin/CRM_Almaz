@@ -14,6 +14,7 @@ const dbMocks = vi.hoisted(() => ({
   deleteContract: vi.fn(),
   getDeals: vi.fn(),
   getDealById: vi.fn(),
+  getDealByNumber: vi.fn(),
   createDeal: vi.fn(),
   updateDeal: vi.fn(),
   deleteDeal: vi.fn(),
@@ -60,7 +61,7 @@ function createContext(): TrpcContext {
     } as TrpcContext["req"],
     res: {
       clearCookie: () => {},
-    } as TrpcContext["res"],
+    } as unknown as TrpcContext["res"],
   };
 }
 
@@ -169,6 +170,52 @@ describe("deals API", () => {
     })).rejects.toThrow("продавец");
 
     expect(dbMocks.createDeal).not.toHaveBeenCalled();
+  });
+
+  it("rejects deal creation if number already exists with friendly message", async () => {
+    const caller = appRouter.createCaller(createContext());
+    dbMocks.getDealByNumber.mockResolvedValueOnce({ id: 1, number: "СД-2026/537" });
+
+    await expect(caller.deals.create({
+      number: "СД-2026/537",
+      sellerId: 11,
+      buyerId: 12,
+      cargoName: "Пшеница",
+      status: "planning",
+      currency: "RUB",
+    })).rejects.toThrow("Сделка с номером «СД-2026/537» уже существует");
+
+    expect(dbMocks.createDeal).not.toHaveBeenCalled();
+  });
+
+  it("supports multiple carrierIds in deal creation", async () => {
+    const caller = appRouter.createCaller(createContext());
+    dbMocks.getDealByNumber.mockResolvedValueOnce(undefined);
+    dbMocks.getCounterpartyById
+      .mockResolvedValueOnce({ id: 11, businessRole: "seller" })
+      .mockResolvedValueOnce({ id: 12, businessRole: "buyer" })
+      .mockResolvedValueOnce({ id: 21, businessRole: "carrier" })
+      .mockResolvedValueOnce({ id: 22, businessRole: "carrier" });
+    dbMocks.createDeal.mockResolvedValueOnce({ id: 9, number: "СД-0010" });
+
+    await caller.deals.create({
+      number: "СД-0010",
+      sellerId: 11,
+      buyerId: 12,
+      carrierId: 21,
+      carrierIds: [21, 22],
+      cargoName: "Ячмень",
+      status: "planning",
+      currency: "RUB",
+    });
+
+    expect(dbMocks.createDeal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        number: "СД-0010",
+        carrierId: 21,
+        carrierIds: "[21,22]",
+      })
+    );
   });
 });
 

@@ -20,6 +20,7 @@ import {
   deleteContract,
   getDeals,
   getDealById,
+  getDealByNumber,
   createDeal,
   updateDeal,
   deleteDeal,
@@ -144,6 +145,7 @@ const dealInput = z.object({
   sellerId: z.number().int().positive(),
   buyerId: z.number().int().positive(),
   carrierId: z.number().int().positive().nullable().optional(),
+  carrierIds: z.array(z.number().int().positive()).optional(),
   cargoName: z.string().trim().min(1),
   cargoGrade: z.string().optional(),
   plannedVolume: z.string().optional(),
@@ -279,11 +281,24 @@ async function assertCounterpartyMatchesContractKind(
   }
 }
 
-async function assertDealParties(input: Pick<z.infer<typeof dealInput>, "sellerId" | "buyerId" | "carrierId">) {
+async function assertDealParties(input: {
+  sellerId: number;
+  buyerId: number;
+  carrierId?: number | null;
+  carrierIds?: number[] | null;
+}) {
+  const allCarrierIds = new Set<number>();
+  if (input.carrierId) allCarrierIds.add(input.carrierId);
+  if (input.carrierIds) {
+    for (const cid of input.carrierIds) {
+      if (cid) allCarrierIds.add(cid);
+    }
+  }
+
   const parties = [
     { id: input.sellerId, role: "seller" as const, label: "продавец" },
     { id: input.buyerId, role: "buyer" as const, label: "покупатель" },
-    ...(input.carrierId ? [{ id: input.carrierId, role: "carrier" as const, label: "перевозчик" }] : []),
+    ...Array.from(allCarrierIds).map((id) => ({ id, role: "carrier" as const, label: "перевозчик" })),
   ];
 
   for (const party of parties) {
@@ -468,8 +483,19 @@ export const appRouter = router({
     create: publicProcedure
       .input(dealInput)
       .mutation(async ({ input }) => {
+        const existing = await getDealByNumber(input.number);
+        if (existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Сделка с номером «${input.number}» уже существует. Пожалуйста, укажите другой номер.`,
+          });
+        }
         await assertDealParties(input);
-        return createDeal(input);
+        const dataToSave = {
+          ...input,
+          carrierIds: input.carrierIds ? JSON.stringify(input.carrierIds) : undefined,
+        };
+        return createDeal(dataToSave as any);
       }),
 
     update: publicProcedure
@@ -477,14 +503,28 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const existing = await getDealById(input.id);
         if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Сделка не найдена" });
-        if (input.data.sellerId || input.data.buyerId || input.data.carrierId !== undefined) {
+        if (input.data.number && input.data.number !== existing.number) {
+          const duplicate = await getDealByNumber(input.data.number);
+          if (duplicate && duplicate.id !== input.id) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Сделка с номером «${input.data.number}» уже существует. Пожалуйста, укажите другой номер.`,
+            });
+          }
+        }
+        if (input.data.sellerId || input.data.buyerId || input.data.carrierId !== undefined || input.data.carrierIds !== undefined) {
           await assertDealParties({
             sellerId: input.data.sellerId ?? existing.sellerId,
             buyerId: input.data.buyerId ?? existing.buyerId,
             carrierId: input.data.carrierId ?? existing.carrierId ?? undefined,
+            carrierIds: input.data.carrierIds,
           });
         }
-        return updateDeal(input.id, input.data);
+        const dataToUpdate = {
+          ...input.data,
+          carrierIds: input.data.carrierIds !== undefined ? JSON.stringify(input.data.carrierIds) : undefined,
+        };
+        return updateDeal(input.id, dataToUpdate as any);
       }),
 
     delete: publicProcedure
