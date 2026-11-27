@@ -129,9 +129,15 @@ export default function Contracts() {
   });
 
   const deleteMutation = trpc.contracts.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       utils.contracts.list.invalidate();
+      utils.recycleBin.list.invalidate();
       utils.dashboard.stats.invalidate();
+      if (editId === variables.id) {
+        setDialogOpen(false);
+        setEditId(null);
+        setStagedScans([]);
+      }
       toast.success("Договор удалён");
     },
     onError: (e) => toast.error(e.message),
@@ -440,7 +446,12 @@ export default function Contracts() {
                     <td className="px-4 py-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            type="button"
+                            aria-label={`Действия с договором ${contract.number}`}
+                            title="Действия"
+                            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground opacity-70 hover:opacity-100 transition-all"
+                          >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </DropdownMenuTrigger>
@@ -565,6 +576,20 @@ export default function Contracts() {
             />
           </div>
           <DialogFooter>
+            {editId !== null && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="sm:mr-auto gap-1.5"
+                disabled={deleteMutation.isPending || isSubmitting || updateMutation.isPending}
+                onClick={() => {
+                  if (confirm("Удалить договор?")) deleteMutation.mutate({ id: editId });
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить
+              </Button>
+            )}
             <Button variant="outline" onClick={() => void openDraftPrintForm()}>
               <Printer className="w-4 h-4 mr-2" />
               Предпросмотр печати

@@ -185,9 +185,14 @@ export default function Counterparties() {
   });
 
   const deleteMutation = trpc.counterparties.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       utils.counterparties.list.invalidate();
+      utils.recycleBin.list.invalidate();
       utils.dashboard.stats.invalidate();
+      if (editId === variables.id) {
+        setDialogOpen(false);
+        setEditId(null);
+      }
       toast.success("Контрагент удалён");
     },
     onError: (e) => toast.error(e.message),
@@ -360,7 +365,7 @@ export default function Counterparties() {
                     <span className="text-xs text-muted-foreground">{formatDate(cp.createdAt)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => openEdit(cp)}
                         className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
@@ -622,6 +627,20 @@ export default function Counterparties() {
           </div>
 
           <DialogFooter>
+            {editId !== null && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="sm:mr-auto gap-1.5"
+                disabled={deleteMutation.isPending || createMutation.isPending || updateMutation.isPending}
+                onClick={() => {
+                  if (confirm("Удалить контрагента?")) deleteMutation.mutate({ id: editId });
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Отмена</Button>
             <Button
               onClick={handleSubmit}

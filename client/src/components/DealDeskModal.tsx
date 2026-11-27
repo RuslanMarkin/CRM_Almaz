@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ArrowRight, Calculator, CheckCircle2, ChevronDown, ChevronUp, FileText, Plus, Sparkles, TrendingUp, Truck } from "lucide-react";
+import { ArrowRight, Calculator, CheckCircle2, ChevronDown, ChevronUp, FileText, Plus, Sparkles, Trash2, TrendingUp, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 export interface DealDeskSubmission {
@@ -81,7 +81,9 @@ interface DealDeskModalProps {
   specifications: SpecificationItem[];
   contracts: ContractItem[];
   saving: boolean;
+  deleting?: boolean;
   onSubmit: (params: DealDeskSubmission) => Promise<void>;
+  onDelete?: () => void;
   onOpenCreateCounterparty?: (role: "seller" | "buyer" | "carrier") => void;
 }
 
@@ -107,7 +109,9 @@ export function DealDeskModal({
   specifications,
   contracts,
   saving,
+  deleting = false,
   onSubmit,
+  onDelete,
   onOpenCreateCounterparty,
 }: DealDeskModalProps) {
   // Form State
@@ -769,15 +773,44 @@ export function DealDeskModal({
         </div>
 
         {/* Footer */}
-        <div className="agro-dialog-footer" style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button type="button" className="agro-btn ghost" onClick={onClose} disabled={saving}>
+        <div
+          className="agro-dialog-footer"
+          style={{
+            borderTop: "1px solid var(--line)",
+            paddingTop: "14px",
+            display: "flex",
+            justifyContent: editingDealId && onDelete ? "space-between" : "flex-end",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}
+        >
+          {editingDealId && onDelete && (
+            <button
+              type="button"
+              className="agro-btn ghost"
+              onClick={onDelete}
+              disabled={saving || deleting}
+              style={{
+                color: "#DC2626",
+                borderColor: "#FCA5A5",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <Trash2 size={15} />
+              <span>{deleting ? "Удаление..." : "Удалить сделку"}</span>
+            </button>
+          )}
+          <div style={{ display: "flex", gap: "10px", marginLeft: "auto" }}>
+            <button type="button" className="agro-btn ghost" onClick={onClose} disabled={saving || deleting}>
               Отмена
             </button>
             <button
               type="button"
               className="agro-btn"
-              disabled={saving}
+              disabled={saving || deleting}
               onClick={handleFormSubmit}
               style={{
                 background: isLoss ? "#DC2626" : "var(--soil)",

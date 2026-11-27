@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { X, Upload, Check } from "lucide-react";
+import { X, Upload, Check, Trash2 } from "lucide-react";
 
 export interface ContractRef {
   id: number;
@@ -77,6 +77,7 @@ export function AddContractSpecificationModal({
   const utils = trpc.useUtils();
   const createSpecMutation = trpc.specifications.create.useMutation();
   const updateSpecMutation = trpc.specifications.update.useMutation();
+  const deleteSpecMutation = trpc.specifications.delete.useMutation();
   const createAttachmentMutation = trpc.attachments.create.useMutation();
 
   useEffect(() => {
@@ -203,6 +204,30 @@ export function AddContractSpecificationModal({
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Произошла ошибка при сохранении";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!editingSpec) return;
+    if (!window.confirm(`Удалить спецификацию № ${editingSpec.number}?`)) return;
+    try {
+      setSubmitting(true);
+      await deleteSpecMutation.mutateAsync({ id: editingSpec.id });
+      await Promise.all([
+        utils.specifications.list.invalidate(),
+        utils.deals.list.invalidate(),
+        utils.contracts.list.invalidate(),
+        utils.recycleBin.list.invalidate(),
+        utils.dashboard.stats.invalidate(),
+      ]);
+      toast.success(`Спецификация № ${editingSpec.number} удалена`);
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Не удалось удалить спецификацию";
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -521,13 +546,42 @@ export function AddContractSpecificationModal({
           )}
 
           {/* Footer actions */}
-          <div className="agro-dialog-footer" style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", marginTop: "6px" }}>
-            <button type="button" className="agro-btn ghost" onClick={onClose} disabled={submitting}>
-              Отмена
-            </button>
-            <button type="submit" className="agro-btn" disabled={submitting}>
-              {submitting ? "Сохранение..." : editingSpec ? "Сохранить изменения" : "Добавить спецификацию"}
-            </button>
+          <div
+            className="agro-dialog-footer"
+            style={{
+              borderTop: "1px solid var(--line)",
+              paddingTop: "14px",
+              marginTop: "6px",
+              justifyContent: editingSpec ? "space-between" : "flex-end",
+              flexWrap: "wrap",
+            }}
+          >
+            {editingSpec && (
+              <button
+                type="button"
+                className="agro-btn ghost"
+                onClick={() => void handleDelete()}
+                disabled={submitting}
+                style={{
+                  color: "#dc2626",
+                  borderColor: "#fca5a5",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <Trash2 size={14} />
+                Удалить
+              </button>
+            )}
+            <div style={{ display: "flex", gap: "10px", marginLeft: "auto" }}>
+              <button type="button" className="agro-btn ghost" onClick={onClose} disabled={submitting}>
+                Отмена
+              </button>
+              <button type="submit" className="agro-btn" disabled={submitting}>
+                {submitting ? "Сохранение..." : editingSpec ? "Сохранить изменения" : "Добавить спецификацию"}
+              </button>
+            </div>
           </div>
         </form>
       </section>

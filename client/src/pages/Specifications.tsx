@@ -121,9 +121,16 @@ export default function Specifications() {
   });
 
   const deleteMutation = trpc.specifications.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       utils.specifications.list.invalidate();
+      utils.deals.list.invalidate();
+      utils.recycleBin.list.invalidate();
       utils.dashboard.stats.invalidate();
+      if (editId === variables.id) {
+        setDialogOpen(false);
+        setEditId(null);
+        setStagedScans([]);
+      }
       toast.success("Спецификация удалена");
     },
     onError: (e) => toast.error(e.message),
@@ -410,7 +417,12 @@ export default function Specifications() {
                     <td className="px-4 py-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            type="button"
+                            aria-label={`Действия со спецификацией ${spec.number}`}
+                            title="Действия"
+                            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground opacity-70 hover:opacity-100 transition-all"
+                          >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </DropdownMenuTrigger>
@@ -673,6 +685,20 @@ export default function Specifications() {
             />
           </div>
           <DialogFooter>
+            {editId !== null && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="sm:mr-auto gap-1.5"
+                disabled={deleteMutation.isPending || isSubmitting || updateMutation.isPending}
+                onClick={() => {
+                  if (confirm("Удалить спецификацию?")) deleteMutation.mutate({ id: editId });
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => {

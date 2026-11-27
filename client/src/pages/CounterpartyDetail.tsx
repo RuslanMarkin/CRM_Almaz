@@ -4,8 +4,8 @@ import { COUNTERPARTY_STATUSES, type CounterpartyStatus } from "@shared/counterp
 import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, BookOpen, ScrollText, Truck, Copy } from "lucide-react";
-import { Link, useParams } from "wouter";
+import { ArrowLeft, Building2, BookOpen, ScrollText, Truck, Copy, Trash2 } from "lucide-react";
+import { Link, useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 
 function ReqRow({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
@@ -26,10 +26,23 @@ function ReqRow({ label, value, mono }: { label: string; value?: string | null; 
 
 export default function CounterpartyDetail() {
   const params = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
   const id = parseInt(params.id ?? "0");
+  const utils = trpc.useUtils();
 
   const { data: cp, isLoading } = trpc.counterparties.getById.useQuery({ id });
   const { data: docs } = trpc.counterparties.getDocuments.useQuery({ id });
+
+  const deleteMutation = trpc.counterparties.delete.useMutation({
+    onSuccess: () => {
+      utils.counterparties.list.invalidate();
+      utils.recycleBin.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      toast.success("Контрагент удалён");
+      setLocation("/legacy-counterparties");
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   if (isLoading) {
     return (
@@ -55,33 +68,48 @@ export default function CounterpartyDetail() {
       </Link>
 
       {/* Header */}
-      <div className="flex items-start gap-4 mb-6">
-        <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
-          <Building2 className="w-6 h-6 text-indigo-600" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-foreground" style={{ fontFamily: "'Playfair Display', serif" }}>
-            {cp.name}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {COUNTERPARTY_TYPES[cp.type as keyof typeof COUNTERPARTY_TYPES] ?? cp.type}
-            {cp.inn && ` · ИНН ${cp.inn}`}
-          </p>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <StatusBadge
-              {...(COUNTERPARTY_STATUSES[(cp.status ?? "normal") as CounterpartyStatus] ?? COUNTERPARTY_STATUSES.normal)}
-            />
-            <span
-              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
-                cp.vatType === "without_vat"
-                  ? "bg-amber-100 text-amber-800 border-amber-200"
-                  : "bg-blue-100 text-blue-800 border-blue-200"
-              }`}
-            >
-              {cp.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"}
-            </span>
+      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-6 h-6 text-indigo-600" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-foreground" style={{ fontFamily: "'Playfair Display', serif" }}>
+              {cp.name}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {COUNTERPARTY_TYPES[cp.type as keyof typeof COUNTERPARTY_TYPES] ?? cp.type}
+              {cp.inn && ` · ИНН ${cp.inn}`}
+            </p>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <StatusBadge
+                {...(COUNTERPARTY_STATUSES[(cp.status ?? "normal") as CounterpartyStatus] ?? COUNTERPARTY_STATUSES.normal)}
+              />
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                  cp.vatType === "without_vat"
+                    ? "bg-amber-100 text-amber-800 border-amber-200"
+                    : "bg-blue-100 text-blue-800 border-blue-200"
+                }`}
+              >
+                {cp.vatType === "without_vat" ? "Без НДС (УСН)" : "С НДС (ОСНО)"}
+              </span>
+            </div>
           </div>
         </div>
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          className="gap-1.5"
+          disabled={deleteMutation.isPending}
+          onClick={() => {
+            if (confirm("Удалить контрагента?")) deleteMutation.mutate({ id: cp.id });
+          }}
+        >
+          <Trash2 className="w-4 h-4" />
+          Удалить
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
