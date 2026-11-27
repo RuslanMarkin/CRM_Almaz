@@ -20,6 +20,7 @@ export default function RecycleBin() {
       utils.recycleBin.list.invalidate();
       utils.counterparties.list.invalidate();
       utils.contracts.list.invalidate();
+      utils.deals.list.invalidate();
       utils.specifications.list.invalidate();
       utils.waybills.list.invalidate();
       utils.dashboard.stats.invalidate();

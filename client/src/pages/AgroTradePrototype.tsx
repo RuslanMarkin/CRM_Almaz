@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { COUNTERPARTY_STATUSES, COUNTERPARTY_STATUS_VALUES, type CounterpartyStatus } from "@shared/counterpartyStatus";
 import { COUNTERPARTY_VAT_TYPES, type CounterpartyVatType } from "@shared/counterpartyVat";
 import { toast } from "sonner";
-import { Calculator, LogOut, Plus, Truck } from "lucide-react";
+import { Calculator, LogOut, Plus, Trash2, Truck } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DealDeskModal, type DealDeskSubmission } from "@/components/DealDeskModal";
 import { AddContractSpecificationModal, type ContractRef, type SpecEditingData } from "@/components/AddContractSpecificationModal";
@@ -297,6 +297,56 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
   const createDeal = trpc.deals.create.useMutation();
   const updateDeal = trpc.deals.update.useMutation();
   const updateSpecificationDeal = trpc.specifications.update.useMutation();
+  const deleteDealMutation = trpc.deals.delete.useMutation({
+    onSuccess: (_, variables) => {
+      utils.deals.list.invalidate();
+      utils.recycleBin.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      setSelectedDealId((prev) => (prev === variables.id ? null : prev));
+      if (editingDealId === variables.id) {
+        setDealDeskOpen(false);
+        setDealFormOpen(false);
+        setEditingDealId(null);
+      }
+      toast.success("Сделка удалена");
+    },
+    onError: (error) => toast.error(error.message || "Не удалось удалить сделку"),
+  });
+  const deleteCounterpartyMutation = trpc.counterparties.delete.useMutation({
+    onSuccess: (_, variables) => {
+      utils.counterparties.list.invalidate();
+      utils.recycleBin.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      if (selectedCounterpartyId === variables.id) {
+        closeCounterpartyDialog();
+      }
+      if (editingCounterpartyId === variables.id) {
+        setCounterpartyFormOpen(false);
+        setEditingCounterpartyId(null);
+      }
+      toast.success("Контрагент удалён");
+    },
+    onError: (error) => toast.error(error.message || "Не удалось удалить контрагента"),
+  });
+  const deleteContractMutation = trpc.contracts.delete.useMutation({
+    onSuccess: () => {
+      utils.contracts.list.invalidate();
+      utils.recycleBin.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      toast.success("Договор удалён");
+    },
+    onError: (error) => toast.error(error.message || "Не удалось удалить договор"),
+  });
+  const deleteSpecificationMutation = trpc.specifications.delete.useMutation({
+    onSuccess: () => {
+      utils.specifications.list.invalidate();
+      utils.deals.list.invalidate();
+      utils.recycleBin.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      toast.success("Спецификация удалена");
+    },
+    onError: (error) => toast.error(error.message || "Не удалось удалить спецификацию"),
+  });
 
   function showView(view: ViewKey) {
     setActiveView(view);
@@ -747,6 +797,56 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
     }
   }
 
+  function handleDeleteDeal(dealId: number) {
+    const model = dealViewModels.find((item) => item.deal.id === dealId);
+    const dealNumber = model?.deal.number ?? String(dealId);
+    const specCount = model?.linkedSpecifications.length ?? 0;
+    const waybillCount = model?.linkedWaybills.length ?? 0;
+    const hasLinks = specCount > 0 || waybillCount > 0;
+    const message = hasLinks
+      ? `Удалить сделку № ${dealNumber}? Сделка переместится в корзину, связанные спецификации (${specCount}) и ТТН (${waybillCount}) останутся в системе.`
+      : `Удалить сделку № ${dealNumber}?`;
+    if (!window.confirm(message)) return;
+    deleteDealMutation.mutate({ id: dealId });
+  }
+
+  function handleDeleteCounterparty(cp: { id: number; name: string; shortName?: string | null }) {
+    const label = cp.shortName || cp.name;
+    const linkedContractsCount = contracts.filter((c) => c.contract.counterpartyId === cp.id).length;
+    const linkedDealsCount = dealRecords.filter(
+      (d) => d.sellerId === cp.id || d.buyerId === cp.id || d.carrierId === cp.id
+    ).length;
+    const linkedWaybillsCount = waybills.filter(
+      (w) => w.supplierId === cp.id || w.buyerId === cp.id || w.carrierId === cp.id
+    ).length;
+    const hasLinks = linkedContractsCount > 0 || linkedDealsCount > 0 || linkedWaybillsCount > 0;
+    const message = hasLinks
+      ? `Удалить контрагента «${label}»? Контрагент переместится в корзину, связанные сделки и документы останутся в системе.`
+      : `Удалить контрагента «${label}»?`;
+    if (!window.confirm(message)) return;
+    deleteCounterpartyMutation.mutate({ id: cp.id });
+  }
+
+  function handleDeleteContract(contract: { id: number; number: string }) {
+    const linkedSpecsCount = specifications.filter((s) => s.specification.contractId === contract.id).length;
+    const message =
+      linkedSpecsCount > 0
+        ? `Удалить договор № ${contract.number}? Договор переместится в корзину, связанные спецификации (${linkedSpecsCount}) останутся в системе.`
+        : `Удалить договор № ${contract.number}?`;
+    if (!window.confirm(message)) return;
+    deleteContractMutation.mutate({ id: contract.id });
+  }
+
+  function handleDeleteSpecification(spec: { id: number; number: string }) {
+    const linkedWaybillsCount = waybills.filter((w) => w.specificationId === spec.id).length;
+    const message =
+      linkedWaybillsCount > 0
+        ? `Удалить спецификацию № ${spec.number}? Спецификация переместится в корзину, связанные ТТН (${linkedWaybillsCount}) останутся в системе.`
+        : `Удалить спецификацию № ${spec.number}?`;
+    if (!window.confirm(message)) return;
+    deleteSpecificationMutation.mutate({ id: spec.id });
+  }
+
   return (
     <div className="agro-prototype">
       <style>{agroStyles}</style>
@@ -879,18 +979,45 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                     const buyer = counterparties.find((counterparty) => counterparty.id === model.deal.buyerId);
                     const completedStages = model.stages.filter((stage) => stage.state === "complete").length;
                     return (
-                      <button type="button" key={model.deal.id} className="agro-deal-card" onClick={() => setSelectedDealId(model.deal.id)}>
+                      <div
+                        key={model.deal.id}
+                        role="button"
+                        tabIndex={0}
+                        className="agro-deal-card"
+                        onClick={() => setSelectedDealId(model.deal.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedDealId(model.deal.id);
+                          }
+                        }}
+                      >
                         <div className="agro-deal-card-main">
                           <div className="agro-deal-number">Сделка № {model.deal.number}</div>
                           <strong>{model.deal.cargoName}{model.deal.cargoGrade ? ` · ${model.deal.cargoGrade}` : ""}</strong>
                           <span>{formatTons(decimal(model.deal.plannedVolume))} · {seller?.shortName || seller?.name || "Продавец не найден"} → {buyer?.shortName || buyer?.name || "Покупатель не найден"}</span>
                         </div>
-                        <div className="agro-deal-progress">
-                          <span className={model.weightProblem ? "agro-status-attention" : "agro-status-ok"}>{dealStatusLabel(model.deal.status)}</span>
-                          <b>{completedStages}/{model.stages.length} этапов</b>
-                          <span>{model.linkedWaybills.length} ТТН</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                          <div className="agro-deal-progress">
+                            <span className={model.weightProblem ? "agro-status-attention" : "agro-status-ok"}>{dealStatusLabel(model.deal.status)}</span>
+                            <b>{completedStages}/{model.stages.length} этапов</b>
+                            <span>{model.linkedWaybills.length} ТТН</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="agro-btn danger-ghost icon-only"
+                            title="Удалить сделку"
+                            aria-label={`Удалить сделку № ${model.deal.number}`}
+                            disabled={deleteDealMutation.isPending}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDeleteDeal(model.deal.id);
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -966,11 +1093,11 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
               </div>
               <Panel flush>
                 <table className="agro-table">
-                  <thead><tr><th>Контрагент</th><th>Роль</th><th>НДС</th><th>Регион</th><th>Профиль</th><th>Статус</th></tr></thead>
+                  <thead><tr><th>Контрагент</th><th>Роль</th><th>НДС</th><th>Регион</th><th>Профиль</th><th>Статус</th><th style={{ width: "48px" }}></th></tr></thead>
                   <tbody>
-                    {counterpartiesLoading && <tr><td colSpan={6} className="agro-empty-row">Загрузка контрагентов...</td></tr>}
+                    {counterpartiesLoading && <tr><td colSpan={7} className="agro-empty-row">Загрузка контрагентов...</td></tr>}
                     {!counterpartiesLoading && !filteredCounterparties.length && (
-                      <tr><td colSpan={6} className="agro-empty-row">В этом разделе пока нет контрагентов. Создайте первую карточку.</td></tr>
+                      <tr><td colSpan={7} className="agro-empty-row">В этом разделе пока нет контрагентов. Создайте первую карточку.</td></tr>
                     )}
                     {filteredCounterparties.map((counterparty) => {
                       const isComplete = Boolean(counterparty.inn && counterparty.bankAccount && counterparty.representativeName);
@@ -1000,6 +1127,21 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                           <td>
                             <span className={`agro-status-badge ${statusKey}`}>{statusMeta.label}</span>
                             {!isComplete && <div className="agro-table-secondary agro-status-attention">Нужны реквизиты</div>}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <button
+                              type="button"
+                              className="agro-btn danger-ghost icon-only"
+                              title="Удалить контрагента"
+                              aria-label={`Удалить контрагента ${counterparty.shortName || counterparty.name}`}
+                              disabled={deleteCounterpartyMutation.isPending}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteCounterparty(counterparty);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -1104,6 +1246,15 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
             </div>
             <div className="agro-card-actions">
               <button type="button" className="agro-btn ghost small" onClick={openEditCounterparty}>Редактировать</button>
+              <button
+                type="button"
+                className="agro-btn danger-ghost small"
+                disabled={deleteCounterpartyMutation.isPending}
+                onClick={() => handleDeleteCounterparty(selectedCounterparty)}
+              >
+                <Trash2 size={14} />
+                Удалить
+              </button>
             </div>
             <div className="agro-card-grid">
               <div className="agro-detail-group">
@@ -1235,14 +1386,26 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        className="agro-btn compact"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12.5px", padding: "7px 14px" }}
-                        onClick={() => openAddSpecModal(item.contract, contractSpecifications.length)}
-                      >
-                        <Plus size={14} /> Добавить спецификацию
-                      </button>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="agro-btn compact"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12.5px", padding: "7px 14px" }}
+                          onClick={() => openAddSpecModal(item.contract, contractSpecifications.length)}
+                        >
+                          <Plus size={14} /> Добавить спецификацию
+                        </button>
+                        <button
+                          type="button"
+                          className="agro-btn danger-ghost icon-only"
+                          title="Удалить договор"
+                          aria-label={`Удалить договор № ${item.contract.number}`}
+                          disabled={deleteContractMutation.isPending}
+                          onClick={() => handleDeleteContract(item.contract)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Scan of the contract */}
@@ -1469,27 +1632,38 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
                                       <option value="cancelled">Отменена</option>
                                     </select>
 
-                                    <button
-                                      type="button"
-                                      className="agro-btn ghost compact"
-                                      style={{ padding: "4px 8px", fontSize: "11.5px" }}
-                                      onClick={() =>
-                                        openEditSpecModal(item.contract, {
-                                          id: spec.id,
-                                          number: spec.number,
-                                          cargoName: spec.cargoName,
-                                          volumeTotal: spec.volumeTotal,
-                                          pricePerUnit: spec.pricePerUnit,
-                                          status: spec.status,
-                                          notes: spec.notes,
-                                          loadingAddress: spec.loadingAddress,
-                                          unloadingAddress: spec.unloadingAddress,
-                                          vatRate: (spec as any).vatRate ?? "10",
-                                        })
-                                      }
-                                    >
-                                      Редактировать
-                                    </button>
+                                      <button
+                                        type="button"
+                                        className="agro-btn ghost compact"
+                                        style={{ padding: "4px 8px", fontSize: "11.5px" }}
+                                        onClick={() =>
+                                          openEditSpecModal(item.contract, {
+                                            id: spec.id,
+                                            number: spec.number,
+                                            cargoName: spec.cargoName,
+                                            volumeTotal: spec.volumeTotal,
+                                            pricePerUnit: spec.pricePerUnit,
+                                            status: spec.status,
+                                            notes: spec.notes,
+                                            loadingAddress: spec.loadingAddress,
+                                            unloadingAddress: spec.unloadingAddress,
+                                            vatRate: (spec as any).vatRate ?? "10",
+                                          })
+                                        }
+                                      >
+                                        Редактировать
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="agro-btn danger-ghost icon-only"
+                                        style={{ width: "28px", height: "28px" }}
+                                        title="Удалить спецификацию"
+                                        aria-label={`Удалить спецификацию № ${spec.number}`}
+                                        disabled={deleteSpecificationMutation.isPending}
+                                        onClick={() => handleDeleteSpecification(spec)}
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
                                   </div>
                                 </div>
 
@@ -1640,6 +1814,15 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
             </div>
             <div className="agro-card-actions">
               <button type="button" className="agro-btn ghost small" onClick={() => openEditDeal(selectedDeal.deal.id)}>Редактировать в Deal Desk</button>
+              <button
+                type="button"
+                className="agro-btn danger-ghost small"
+                disabled={deleteDealMutation.isPending}
+                onClick={() => handleDeleteDeal(selectedDeal.deal.id)}
+              >
+                <Trash2 size={14} />
+                Удалить сделку
+              </button>
             </div>
 
             {/* Formula M Banner */}
@@ -1767,7 +1950,9 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
         specifications={specifications}
         contracts={contracts}
         saving={dealDeskSaving}
+        deleting={deleteDealMutation.isPending}
         onSubmit={handleDealDeskSubmit}
+        onDelete={editingDealId ? () => handleDeleteDeal(editingDealId) : undefined}
         onOpenCreateCounterparty={(role) => {
           setCounterpartyForm({
             ...emptyCounterpartyForm,
@@ -1795,12 +1980,23 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
           form={counterpartyForm}
           editing={Boolean(editingCounterpartyId)}
           saving={createCounterparty.isPending || updateCounterparty.isPending}
+          deleting={deleteCounterpartyMutation.isPending}
           onChange={setCounterpartyForm}
           onClose={() => {
             setCounterpartyFormOpen(false);
             setEditingCounterpartyId(null);
           }}
           onSubmit={submitCounterparty}
+          onDelete={
+            editingCounterpartyId
+              ? () =>
+                  handleDeleteCounterparty({
+                    id: editingCounterpartyId,
+                    name: counterpartyForm.name || "Контрагент",
+                    shortName: counterpartyForm.shortName,
+                  })
+              : undefined
+          }
         />
       )}
 
@@ -1809,6 +2005,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
           form={dealForm}
           editing={Boolean(editingDealId)}
           saving={createDeal.isPending || updateDeal.isPending || updateSpecificationDeal.isPending}
+          deleting={deleteDealMutation.isPending}
           counterparties={counterparties}
           specifications={specifications}
           contracts={contracts}
@@ -1818,6 +2015,7 @@ export default function AgroTradePrototype({ initialView = "dashboard", initialC
             setEditingDealId(null);
           }}
           onSubmit={submitDeal}
+          onDelete={editingDealId ? () => handleDeleteDeal(editingDealId) : undefined}
           onOpenSpecifications={() => showView("specifications")}
         />
       )}
@@ -1876,23 +2074,27 @@ function DealFormModal({
   form,
   editing,
   saving,
+  deleting = false,
   counterparties,
   specifications,
   contracts,
   onChange,
   onClose,
   onSubmit,
+  onDelete,
   onOpenSpecifications,
 }: {
   form: DealFormState;
   editing: boolean;
   saving: boolean;
+  deleting?: boolean;
   counterparties: Array<{ id: number; name: string; shortName: string | null; businessRole: string | null }>;
   specifications: Array<{ specification: { id: number; number: string; dealId: number | null; contractId: number; cargoName: string | null } }>;
   contracts: Array<{ contract: { id: number; number: string; contractKind: "purchase" | "sale" | "carriage" | null } }>;
   onChange: (form: DealFormState) => void;
   onClose: () => void;
   onSubmit: () => void;
+  onDelete?: () => void;
   onOpenSpecifications?: () => void;
 }) {
   const setField = (key: Exclude<keyof DealFormState, "specificationIds">, value: string) => onChange({ ...form, [key]: value });
@@ -1959,7 +2161,18 @@ function DealFormModal({
           </div>
         </div>
         <div className="agro-form-section"><label className="agro-field"><span>Примечание</span><textarea rows={3} value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></label></div>
-        <div className="agro-dialog-footer"><button type="button" className="agro-btn ghost" onClick={onClose}>Отмена</button><button type="button" className="agro-btn" disabled={saving} onClick={onSubmit}>{editing ? "Сохранить" : "Создать сделку"}</button></div>
+        <div className="agro-dialog-footer" style={{ justifyContent: editing && onDelete ? "space-between" : "flex-end" }}>
+          {editing && onDelete && (
+            <button type="button" className="agro-btn danger-ghost" disabled={saving || deleting} onClick={onDelete}>
+              <Trash2 size={14} />
+              Удалить сделку
+            </button>
+          )}
+          <div style={{ display: "flex", gap: "10px", marginLeft: "auto" }}>
+            <button type="button" className="agro-btn ghost" disabled={saving || deleting} onClick={onClose}>Отмена</button>
+            <button type="button" className="agro-btn" disabled={saving || deleting} onClick={onSubmit}>{editing ? "Сохранить" : "Создать сделку"}</button>
+          </div>
+        </div>
       </section>
     </div>
   );
@@ -2052,16 +2265,20 @@ function CounterpartyFormModal({
   form,
   editing,
   saving,
+  deleting = false,
   onChange,
   onClose,
   onSubmit,
+  onDelete,
 }: {
   form: CounterpartyFormState;
   editing: boolean;
   saving: boolean;
+  deleting?: boolean;
   onChange: (form: CounterpartyFormState) => void;
   onClose: () => void;
   onSubmit: () => void;
+  onDelete?: () => void;
 }) {
   const formRef = useRef(form);
   formRef.current = form;
@@ -2324,9 +2541,17 @@ function CounterpartyFormModal({
         <div className="agro-form-section">
           <label className="agro-field agro-field-wide"><span>Примечания</span><textarea value={form.notes} onChange={(event) => setField("notes", event.target.value)} rows={3} /></label>
         </div>
-        <div className="agro-dialog-footer">
-          <button type="button" className="agro-btn ghost" onClick={onClose}>Отмена</button>
-          <button type="button" className="agro-btn" disabled={saving} onClick={onSubmit}>{editing ? "Сохранить" : "Создать карточку"}</button>
+        <div className="agro-dialog-footer" style={{ justifyContent: editing && onDelete ? "space-between" : "flex-end" }}>
+          {editing && onDelete && (
+            <button type="button" className="agro-btn danger-ghost" disabled={saving || deleting} onClick={onDelete}>
+              <Trash2 size={14} />
+              Удалить
+            </button>
+          )}
+          <div style={{ display: "flex", gap: "10px", marginLeft: "auto" }}>
+            <button type="button" className="agro-btn ghost" disabled={saving || deleting} onClick={onClose}>Отмена</button>
+            <button type="button" className="agro-btn" disabled={saving || deleting} onClick={onSubmit}>{editing ? "Сохранить" : "Создать карточку"}</button>
+          </div>
         </div>
       </section>
     </div>
@@ -2708,6 +2933,9 @@ const agroStyles = `
 .agro-btn:hover{background:#0a6358;}
 .agro-btn.wide{width:100%; padding:12px;}
 .agro-btn.ghost{background:transparent; color:var(--soil); border:1px solid var(--line);}
+.agro-btn.danger-ghost{background:transparent; color:#DC2626; border:1px solid #FCA5A5; display:inline-flex; align-items:center; justify-content:center; gap:6px;}
+.agro-btn.danger-ghost:hover{background:#FEF2F2; border-color:#F87171;}
+.agro-btn.icon-only{padding:0; width:32px; height:32px; border-radius:6px; flex-shrink:0;}
 .agro-btn.small{padding:6px 12px; font-size:12px;}
 .agro-kpi-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;}
 .agro-kpi{background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px 20px; position:relative; overflow:hidden;}
@@ -2821,7 +3049,7 @@ const agroStyles = `
 .agro-dialog-head h2{font-family:var(--display); font-size:24px; color:var(--soil); margin:2px 0 8px;}
 .agro-dialog-kicker{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--soil-soft);}
 .agro-icon-button{border:1px solid var(--line); background:#fff; color:var(--soil); width:32px; height:32px; line-height:28px; font-size:22px; border-radius:6px; cursor:pointer; flex:0 0 auto;}
-.agro-card-actions{display:flex; justify-content:flex-end; padding:14px 0 0;}
+.agro-card-actions{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; padding:14px 0 0;}
 .agro-card-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:14px;}
 .agro-detail-group{border:1px solid var(--line); border-radius:8px; padding:14px;}
 .agro-detail-group h3,.agro-form-section h3{font-family:var(--display); color:var(--soil); font-size:16px; margin:0 0 10px;}

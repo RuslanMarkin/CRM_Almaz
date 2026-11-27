@@ -328,6 +328,21 @@ async function assertWaybillCanBeFormed(id: number) {
   }
 }
 
+async function runSoftDelete(operation: () => Promise<unknown>, fallbackMessage: string) {
+  try {
+    await operation();
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    const isNotFound = /не найден|не найдена/i.test(message);
+    throw new TRPCError({
+      code: isNotFound ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+      message,
+    });
+  }
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export const appRouter = router({
@@ -395,8 +410,10 @@ export const appRouter = router({
       .mutation(({ input }) => updateCounterparty(input.id, input.data)),
 
     delete: publicProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input, ctx }) => deleteCounterparty(input.id, ctx.user.name)),
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ input, ctx }) =>
+        runSoftDelete(() => deleteCounterparty(input.id, ctx.user.name), "Не удалось удалить контрагента")
+      ),
   }),
 
   // ─── Contracts ────────────────────────────────────────────────────────────
@@ -451,8 +468,10 @@ export const appRouter = router({
       .mutation(({ input }) => updateContract(input.id, { status: input.status })),
 
     delete: publicProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input, ctx }) => deleteContract(input.id, ctx.user.name)),
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ input, ctx }) =>
+        runSoftDelete(() => deleteContract(input.id, ctx.user.name), "Не удалось удалить договор")
+      ),
   }),
 
   // ─── Deals ────────────────────────────────────────────────────────────────
@@ -489,7 +508,9 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ input, ctx }) => deleteDeal(input.id, ctx.user.name)),
+      .mutation(({ input, ctx }) =>
+        runSoftDelete(() => deleteDeal(input.id, ctx.user.name), "Не удалось удалить сделку")
+      ),
   }),
 
   // ─── Specifications ───────────────────────────────────────────────────────
@@ -536,8 +557,10 @@ export const appRouter = router({
       ),
 
     delete: publicProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input, ctx }) => deleteSpecification(input.id, ctx.user.name)),
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ input, ctx }) =>
+        runSoftDelete(() => deleteSpecification(input.id, ctx.user.name), "Не удалось удалить спецификацию")
+      ),
   }),
 
   // ─── Document scan attachments ───────────────────────────────────────────
