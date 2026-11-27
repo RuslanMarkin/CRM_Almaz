@@ -450,6 +450,7 @@ export function DealDeskModal({
                 </label>
                 <input
                   type="number"
+                  onWheel={(e) => e.currentTarget.blur()}
                   value={plannedVolume}
                   onChange={(e) => setPlannedVolume(e.target.value)}
                   placeholder="200"
@@ -462,6 +463,7 @@ export function DealDeskModal({
                 </label>
                 <input
                   type="number"
+                  onWheel={(e) => e.currentTarget.blur()}
                   value={purchasePrice}
                   onChange={(e) => setPurchasePrice(e.target.value)}
                   placeholder="14000"
@@ -546,6 +548,7 @@ export function DealDeskModal({
               </label>
               <input
                 type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                 value={carrierTariff}
                 onChange={(e) => setCarrierTariff(e.target.value)}
                 placeholder="1500"
@@ -632,6 +635,7 @@ export function DealDeskModal({
               </label>
               <input
                 type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                 value={salePrice}
                 onChange={(e) => setSalePrice(e.target.value)}
                 placeholder="17000"
